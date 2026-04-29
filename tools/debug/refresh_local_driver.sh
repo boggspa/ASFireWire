@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DRIVER_ID="${ASFW_DRIVER_ID:-com.lychzord.ASFWTest.ASFWDriver}"
+DRIVER_ID="${ASFW_DRIVER_ID:-com.chrisizatt.ASFWLocal.ASFWDriver}"
 APP_PATH="${ASFW_LOCAL_APP:-/Applications/ASFWLychzord.app}"
 EXPECTED_CDHASH="${ASFW_EXPECTED_CDHASH:-}"
 SNAP_BASE="${ASFW_REFRESH_SNAPSHOT_DIR:-/tmp/asfw-refresh-$(date +%Y%m%d-%H%M%S)}"

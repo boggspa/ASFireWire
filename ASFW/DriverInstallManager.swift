@@ -19,7 +19,7 @@ final class DriverInstallManager: NSObject, OSSystemExtensionRequestDelegate {
            !appIdentifier.isEmpty {
             return "\(appIdentifier).ASFWDriver"
         }
-        return "com.lychzord.ASFWTest.ASFWDriver"
+        return "com.chrisizatt.ASFWLocal.ASFWDriver"
     }
 
     private static func embeddedDextBundleIdentifier() -> String? {

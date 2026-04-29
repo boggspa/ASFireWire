@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DRIVER_ID="${ASFW_DRIVER_BUNDLE_IDENTIFIER:-com.lychzord.ASFWTest.ASFWDriver}"
+DRIVER_ID="${ASFW_DRIVER_BUNDLE_IDENTIFIER:-com.chrisizatt.ASFWLocal.ASFWDriver}"
 APP_PATH="${ASFW_LOCAL_APP:-/Applications/ASFWLychzord.app}"
 TEAM_ID="${ASFW_DEVELOPMENT_TEAM:-}"
 CONFIRM=false

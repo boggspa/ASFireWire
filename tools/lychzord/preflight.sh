@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DRIVER_ID="${ASFW_DRIVER_BUNDLE_IDENTIFIER:-com.lychzord.ASFWTest.ASFWDriver}"
-APP_ID="${ASFW_APP_BUNDLE_IDENTIFIER:-com.lychzord.ASFWTest}"
+DRIVER_ID="${ASFW_DRIVER_BUNDLE_IDENTIFIER:-com.chrisizatt.ASFWLocal.ASFWDriver}"
+APP_ID="${ASFW_APP_BUNDLE_IDENTIFIER:-com.chrisizatt.ASFWLocal}"
 
 section() {
   printf '\n== %s ==\n' "$1"

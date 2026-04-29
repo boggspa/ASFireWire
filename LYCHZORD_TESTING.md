@@ -1,15 +1,24 @@
-# Lychzord Midas Venice Test Build
+# Lychzord Midas Venice v16 Test Build
 
-This private copy starts from ASFW v15 (`c4d6278`) and isolates the external-test bundle IDs from Chris's local Alesis install.
+This private copy starts from ASFW v15 (`c4d6278`) and isolates the external-test bundle IDs from Chris's local Alesis install. The v16-lych build targets macOS 15.5+ and DriverKit 24.0+ for macOS 15.6 testing.
 
 ## Identities
 
-- App bundle ID: `com.lychzord.ASFWTest`
-- Driver bundle ID: `com.lychzord.ASFWTest.ASFWDriver`
+- App bundle ID: `com.chrisizatt.ASFWLocal`
+- Driver bundle ID: `com.chrisizatt.ASFWLocal.ASFWDriver`
 - Staged app path: `/Applications/ASFWLychzord.app`
+- Bundle version: `16`
 - Known Venice ROM identity: vendor `0x10c73f`, model `0x000001`, text `Midas` / `Venice`
 
+## Chris-Signed Prebuilt
+
+If using the Chris-signed prebuilt package, unzip `ASFW.app`, move it to `/Applications/ASFWLychzord.app`, open it, and use the app's install button. macOS may show Gatekeeper or system-extension approval prompts; approve the app/extension and reboot if System Settings asks for it.
+
+The prebuilt is signed by Chris's local Apple developer identity. Lychzord does not need a paid developer team ID for this lane. The prebuilt uses Chris's known working IDs, `com.chrisizatt.ASFWLocal` and `com.chrisizatt.ASFWLocal.ASFWDriver`, because those are the IDs with the required DriverKit/System Extension capabilities available on Chris's signing setup.
+
 ## Build And Install
+
+This lane is only for someone with a DriverKit-capable signing setup:
 
 ```sh
 ./tools/lychzord/preflight.sh
@@ -30,6 +39,14 @@ For a compile-only reference build that is not installable:
 
 ```sh
 ./tools/lychzord/build_local.sh --unsigned-reference
+```
+
+For Chris to rebuild the external-test prebuilt:
+
+```sh
+./tools/lychzord/build_local.sh --chris-prebuilt
+./tools/lychzord/sign_chris_prebuilt.sh
+ASFW_APP_PACKAGE_KIND=signed-prebuilt ./tools/lychzord/package_artifacts.sh
 ```
 
 ## Midas Behavior
@@ -82,4 +99,4 @@ After committing private-copy changes and building if desired:
 ./tools/lychzord/package_artifacts.sh
 ```
 
-The source package excludes `.git`, build products, user Xcode state, provisioning profiles, certificates, and local signing secrets. The reference app package is secondary; rebuild locally before serious testing.
+The source package excludes `.git`, build products, user Xcode state, provisioning profiles, certificates, and local signing secrets. The signed-prebuilt app package is intended for Lychzord's first Venice smoke test.
