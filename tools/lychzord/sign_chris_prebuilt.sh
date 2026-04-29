@@ -7,6 +7,8 @@ DERIVED="${ASFW_DERIVED_DATA:-$ROOT_DIR/build/DerivedDataLychzord}"
 APP_PATH="${1:-$DERIVED/Build/Products/$CONFIGURATION/ASFW.app}"
 REFERENCE_APP="${ASFW_CHRIS_REFERENCE_APP:-/Applications/ASFWLocal.app}"
 SIGN_IDENTITY="${ASFW_CODESIGN_IDENTITY:-}"
+APP_PROFILE="${ASFW_APP_PROFILE:-}"
+DRIVER_PROFILE="${ASFW_DRIVER_PROFILE:-}"
 
 if [[ ! -d "$APP_PATH" ]]; then
   echo "Built app not found: $APP_PATH" >&2
@@ -27,6 +29,19 @@ if [[ -z "$ref_dext" || -z "$built_dext" ]]; then
   exit 1
 fi
 
+APP_PROFILE="${APP_PROFILE:-$REFERENCE_APP/Contents/embedded.provisionprofile}"
+DRIVER_PROFILE="${DRIVER_PROFILE:-$ref_dext/embedded.provisionprofile}"
+
+if [[ ! -f "$APP_PROFILE" ]]; then
+  echo "App provisioning profile not found: $APP_PROFILE" >&2
+  exit 1
+fi
+
+if [[ ! -f "$DRIVER_PROFILE" ]]; then
+  echo "Driver provisioning profile not found: $DRIVER_PROFILE" >&2
+  exit 1
+fi
+
 bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$built_dext/Info.plist")"
 expected_dext="$(dirname "$built_dext")/$bundle_id.dext"
 if [[ "$built_dext" != "$expected_dext" ]]; then
@@ -43,8 +58,8 @@ if [[ -z "$SIGN_IDENTITY" ]]; then
   exit 1
 fi
 
-install -m 0644 "$REFERENCE_APP/Contents/embedded.provisionprofile" "$APP_PATH/Contents/embedded.provisionprofile"
-install -m 0644 "$ref_dext/embedded.provisionprofile" "$built_dext/embedded.provisionprofile"
+install -m 0644 "$APP_PROFILE" "$APP_PATH/Contents/embedded.provisionprofile"
+install -m 0644 "$DRIVER_PROFILE" "$built_dext/embedded.provisionprofile"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -66,3 +81,4 @@ done
 printf 'Signed Chris prebuilt app:\n  %s\n' "$APP_PATH"
 printf 'Embedded dext:\n  %s\n' "$built_dext"
 printf 'Signing identity:\n  %s\n' "$SIGN_IDENTITY"
+printf 'Provisioning profiles:\n  app: %s\n  driver: %s\n' "$APP_PROFILE" "$DRIVER_PROFILE"

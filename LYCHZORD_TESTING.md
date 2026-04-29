@@ -16,6 +16,28 @@ If using the Chris-signed prebuilt package, unzip `ASFW.app`, move it to `/Appli
 
 The prebuilt is signed by Chris's local Apple developer identity. Lychzord does not need a paid developer team ID for this lane. The prebuilt uses Chris's known working IDs, `com.chrisizatt.ASFWLocal` and `com.chrisizatt.ASFWLocal.ASFWDriver`, because those are the IDs with the required DriverKit/System Extension capabilities available on Chris's signing setup.
 
+If macOS says the app "could not be opened", first remove quarantine:
+
+```sh
+sudo xattr -dr com.apple.quarantine /Applications/ASFWLychzord.app
+open /Applications/ASFWLychzord.app
+```
+
+If it still will not launch, the likely cause is that the development provisioning profiles do not include Lychzord's Mac. Ask Lychzord to send these IDs privately:
+
+```sh
+sw_vers
+system_profiler SPHardwareDataType | egrep 'Model Name|Model Identifier|Chip|Processor|Hardware UUID|Provisioning UDID'
+```
+
+Chris must add the Mac's provisioning ID to the Apple Developer device list, regenerate the app and DriverKit profiles for `com.chrisizatt.ASFWLocal` and `com.chrisizatt.ASFWLocal.ASFWDriver`, then rebuild the signed prebuilt. The signer supports explicit refreshed profiles:
+
+```sh
+ASFW_APP_PROFILE=/path/to/refreshed-app.provisionprofile \
+ASFW_DRIVER_PROFILE=/path/to/refreshed-driver.provisionprofile \
+./tools/lychzord/sign_chris_prebuilt.sh
+```
+
 ## Build And Install
 
 This lane is only for someone with a DriverKit-capable signing setup:
