@@ -14,7 +14,7 @@ final class DriverInstallManager: NSObject, OSSystemExtensionRequestDelegate {
            !appIdentifier.isEmpty {
             return "\(appIdentifier).ASFWDriver"
         }
-        return "net.mrmidi.ASFW.ASFWDriver"
+        return "com.chrisizatt.ASFWLocal.ASFWDriver"
     }() // matches driver bundle id
 
     var extensionBundleIdentifier: String { extensionIdentifier }
