@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DRIVER_ID="${ASFW_DRIVER_ID:-com.chrisizatt.ASFWLocal.ASFWDriver}"
-APP_PATH="${ASFW_LOCAL_APP:-/Applications/ASFWLocal.app}"
+DRIVER_ID="${ASFW_DRIVER_ID:-com.lychzord.ASFWTest.ASFWDriver}"
+APP_PATH="${ASFW_LOCAL_APP:-/Applications/ASFWLychzord.app}"
 LOG_WINDOW="${ASFW_LOG_WINDOW:-15m}"
 
 section() {
@@ -64,9 +64,9 @@ done
 
 section "Core Audio Visibility"
 system_profiler SPAudioDataType -detailLevel full \
-  | filter 'Alesis MultiMix Firewire|ASFireWire|FWA Firewire Audio|Transport: FireWire'
+  | filter 'Alesis MultiMix Firewire|Midas|Venice|ASFireWire|FWA Firewire Audio|Transport: FireWire'
 
 section "Focused Recent Logs"
 /usr/bin/log show --last "$LOG_WINDOW" --style compact --predicate \
-  'eventMessage CONTAINS[c] "ASFWDriver::Start" OR eventMessage CONTAINS[c] "start(pci11c1,5901)" OR eventMessage CONTAINS[c] "Device upsert" OR eventMessage CONTAINS[c] "Known device profile" OR eventMessage CONTAINS[c] "DICETcatProtocol" OR eventMessage CONTAINS[c] "DiceAudioBackend" OR eventMessage CONTAINS[c] "ASFWAudioNub ready" OR eventMessage CONTAINS[c] "ASFWAudioDriver: Started" OR eventMessage CONTAINS[c] "HALS_Device::Activate" OR eventMessage CONTAINS[c] "Alesis" OR eventMessage CONTAINS[c] "MultiMix" OR eventMessage CONTAINS[c] "dext was replaced"' \
-  | filter 'ASFW|Alesis|MultiMix|DICE|AudioNub|HALS_Device::Activate|pci11c1,5901|dext was replaced'
+  'eventMessage CONTAINS[c] "ASFWDriver::Start" OR eventMessage CONTAINS[c] "start(pci11c1,5901)" OR eventMessage CONTAINS[c] "Device upsert" OR eventMessage CONTAINS[c] "Known device profile" OR eventMessage CONTAINS[c] "DICETcatProtocol" OR eventMessage CONTAINS[c] "DiceAudioBackend" OR eventMessage CONTAINS[c] "ASFWAudioNub ready" OR eventMessage CONTAINS[c] "ASFWAudioDriver: Started" OR eventMessage CONTAINS[c] "HALS_Device::Activate" OR eventMessage CONTAINS[c] "Alesis" OR eventMessage CONTAINS[c] "MultiMix" OR eventMessage CONTAINS[c] "Midas" OR eventMessage CONTAINS[c] "Venice" OR eventMessage CONTAINS[c] "dext was replaced"' \
+  | filter 'ASFW|Alesis|MultiMix|Midas|Venice|DICE|AudioNub|HALS_Device::Activate|pci11c1,5901|dext was replaced'

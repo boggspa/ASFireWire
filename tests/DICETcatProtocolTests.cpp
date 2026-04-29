@@ -380,4 +380,12 @@ TEST(DICEKnownProfilesTests, ReturnsKnownFocusriteProfiles) {
     EXPECT_EQ(caps.hostToDeviceAm824Slots, 2U);
 }
 
+TEST(DICEKnownProfilesTests, DoesNotGuessMidasVeniceRuntimeCaps) {
+    AudioStreamRuntimeCaps caps{};
+    EXPECT_FALSE(TryGetKnownDICEProfile(0x10c73fU, 0x000001U, caps));
+    EXPECT_EQ(caps.sampleRateHz, 0U);
+    EXPECT_EQ(caps.hostInputPcmChannels, 0U);
+    EXPECT_EQ(caps.hostOutputPcmChannels, 0U);
+}
+
 } // namespace

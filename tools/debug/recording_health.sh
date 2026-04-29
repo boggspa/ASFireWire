@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DRIVER_ID="${ASFW_DRIVER_ID:-com.chrisizatt.ASFWLocal.ASFWDriver}"
-APP_PATH="${ASFW_LOCAL_APP:-/Applications/ASFWLocal.app}"
+DRIVER_ID="${ASFW_DRIVER_ID:-com.lychzord.ASFWTest.ASFWDriver}"
+APP_PATH="${ASFW_LOCAL_APP:-/Applications/ASFWLychzord.app}"
 LOG_WINDOW="${ASFW_LOG_WINDOW:-20m}"
 OUT_DIR="${ASFW_RECORDING_HEALTH_DIR:-/tmp/asfw-recording-health-$(date +%Y%m%d-%H%M%S)}"
 WAV_PATH=""
@@ -71,7 +71,7 @@ capture_shell() {
 }
 
 cat >"$OUT_DIR/README.txt" <<README
-Alesis MultiMix recording-health capture
+ASFW DICE recording-health capture
 Created: $(date)
 Driver ID: $DRIVER_ID
 App path: $APP_PATH
@@ -79,7 +79,7 @@ Log window: $LOG_WINDOW
 
 Recommended live test setup:
 - Logic at 48 kHz
-- Alesis MultiMix as input
+- DICE device as input
 - non-Alesis output
 - software monitoring off
 - 256-frame buffer
@@ -109,12 +109,12 @@ capture "ioreg_asfw_audio_nub.txt" ioreg -p IOService -l -w0 -r -c ASFWAudioNub
 capture "ioreg_asfw_audio_driver.txt" ioreg -p IOService -l -w0 -r -c ASFWAudioDriver
 capture "ioreg_asfw_driver.txt" ioreg -p IOService -l -w0 -r -c ASFWDriver
 
-LOG_PREDICATE='eventMessage CONTAINS[c] "ASFW" OR eventMessage CONTAINS[c] "Alesis" OR eventMessage CONTAINS[c] "MultiMix" OR eventMessage CONTAINS[c] "DICE" OR eventMessage CONTAINS[c] "RxStats" OR eventMessage CONTAINS[c] "IR RX HEALTH" OR eventMessage CONTAINS[c] "IR SYT" OR eventMessage CONTAINS[c] "RX startup" OR eventMessage CONTAINS[c] "ZERO-FILL" OR eventMessage CONTAINS[c] "RX QUEUE" OR eventMessage CONTAINS[c] "rxq/producer-drop" OR eventMessage CONTAINS[c] "producer-drop" OR eventMessage CONTAINS[c] "isoch length clamp" OR eventMessage CONTAINS[c] "PCM slot payload fallback" OR eventMessage CONTAINS[c] "IO callback" OR eventMessage CONTAINS[c] "IO-RX" OR eventMessage CONTAINS[c] "HALS_Device" OR eventMessage CONTAINS[c] "Logic" OR eventMessage CONTAINS[c] "sample rate" OR eventMessage CONTAINS[c] "ZTS" OR eventMessage CONTAINS[c] "RX transport rebase" OR eventMessage CONTAINS[c] "RX high-water trim" OR eventMessage CONTAINS[c] "RX high-water slew" OR eventMessage CONTAINS[c] "RX high-water emergency-trim" OR eventMessage CONTAINS[c] "rx/high-water-trim" OR eventMessage CONTAINS[c] "rx/high-water-slew" OR eventMessage CONTAINS[c] "rx/high-water-emergency-trim" OR eventMessage CONTAINS[c] "RX QUEUE UNDERREAD" OR eventMessage CONTAINS[c] "decoded all-zero run" OR eventMessage CONTAINS[c] "IO-TX" OR eventMessage CONTAINS[c] "CLK" OR eventMessage CONTAINS[c] "DBC" OR eventMessage CONTAINS[c] "CIP"'
+LOG_PREDICATE='eventMessage CONTAINS[c] "ASFW" OR eventMessage CONTAINS[c] "Alesis" OR eventMessage CONTAINS[c] "MultiMix" OR eventMessage CONTAINS[c] "Midas" OR eventMessage CONTAINS[c] "Venice" OR eventMessage CONTAINS[c] "DICE" OR eventMessage CONTAINS[c] "RxStats" OR eventMessage CONTAINS[c] "IR RX HEALTH" OR eventMessage CONTAINS[c] "IR SYT" OR eventMessage CONTAINS[c] "RX startup" OR eventMessage CONTAINS[c] "ZERO-FILL" OR eventMessage CONTAINS[c] "RX QUEUE" OR eventMessage CONTAINS[c] "rxq/producer-drop" OR eventMessage CONTAINS[c] "producer-drop" OR eventMessage CONTAINS[c] "isoch length clamp" OR eventMessage CONTAINS[c] "PCM slot payload fallback" OR eventMessage CONTAINS[c] "IO callback" OR eventMessage CONTAINS[c] "IO-RX" OR eventMessage CONTAINS[c] "HALS_Device" OR eventMessage CONTAINS[c] "Logic" OR eventMessage CONTAINS[c] "sample rate" OR eventMessage CONTAINS[c] "ZTS" OR eventMessage CONTAINS[c] "RX transport rebase" OR eventMessage CONTAINS[c] "RX high-water trim" OR eventMessage CONTAINS[c] "RX high-water slew" OR eventMessage CONTAINS[c] "RX high-water emergency-trim" OR eventMessage CONTAINS[c] "rx/high-water-trim" OR eventMessage CONTAINS[c] "rx/high-water-slew" OR eventMessage CONTAINS[c] "rx/high-water-emergency-trim" OR eventMessage CONTAINS[c] "RX QUEUE UNDERREAD" OR eventMessage CONTAINS[c] "decoded all-zero run" OR eventMessage CONTAINS[c] "IO-TX" OR eventMessage CONTAINS[c] "CLK" OR eventMessage CONTAINS[c] "DBC" OR eventMessage CONTAINS[c] "CIP"'
 
 capture_shell "focused_logs.txt" /usr/bin/log show --last "$LOG_WINDOW" --style syslog --predicate "$LOG_PREDICATE"
 
 {
-  printf 'Alesis MultiMix DICE register and timing snapshot\n'
+  printf 'ASFW DICE register and timing snapshot\n'
   printf 'Created: %s\n' "$(date)"
   printf 'Source log: %s\n\n' "$OUT_DIR/focused_logs.txt"
 

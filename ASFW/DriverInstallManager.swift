@@ -5,17 +5,46 @@ final class DriverInstallManager: NSObject, OSSystemExtensionRequestDelegate {
     static let shared = DriverInstallManager()
     private override init() {}
 
-    private let extensionIdentifier: String = {
+    private let extensionIdentifier: String = DriverInstallManager.resolveExtensionIdentifier()
+
+    private static func resolveExtensionIdentifier() -> String {
         if let configured = Bundle.main.object(forInfoDictionaryKey: "ASFWDriverBundleIdentifier") as? String,
            !configured.isEmpty {
             return configured
+        }
+        if let embedded = embeddedDextBundleIdentifier() {
+            return embedded
         }
         if let appIdentifier = Bundle.main.bundleIdentifier,
            !appIdentifier.isEmpty {
             return "\(appIdentifier).ASFWDriver"
         }
-        return "net.mrmidi.ASFW.ASFWDriver"
-    }() // matches driver bundle id
+        return "com.lychzord.ASFWTest.ASFWDriver"
+    }
+
+    private static func embeddedDextBundleIdentifier() -> String? {
+        let fm = FileManager.default
+        let sysExtDir = Bundle.main.bundleURL.appendingPathComponent("Contents/Library/SystemExtensions", isDirectory: true)
+        guard let entries = try? fm.contentsOfDirectory(at: sysExtDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            return nil
+        }
+        for url in entries.filter({ $0.pathExtension == "dext" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            if let identifier = dextInfo(at: url)?["CFBundleIdentifier"] as? String,
+               !identifier.isEmpty {
+                return identifier
+            }
+        }
+        return nil
+    }
+
+    private static func dextInfo(at url: URL) -> [String: Any]? {
+        let plist = url.appendingPathComponent("Info.plist")
+        guard let data = try? Data(contentsOf: plist),
+              let plistObj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
+            return nil
+        }
+        return plistObj
+    }
 
     var extensionBundleIdentifier: String { extensionIdentifier }
     var appBundlePath: String { Bundle.main.bundleURL.standardizedFileURL.path }
@@ -110,9 +139,7 @@ final class DriverInstallManager: NSObject, OSSystemExtensionRequestDelegate {
             if entries.isEmpty { print("[DriverInstall] SystemExtensions directory is empty") }
             for url in entries where url.pathExtension == "dext" {
                 print("[DriverInstall] Found candidate dext: \(url.lastPathComponent)")
-                let plist = url.appendingPathComponent("Info.plist")
-                if let data = try? Data(contentsOf: plist),
-                   let plistObj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
+                if let plistObj = Self.dextInfo(at: url) {
                     let bid = plistObj["CFBundleIdentifier"] as? String ?? "<nil>"
                     let ver = plistObj["CFBundleVersion"] as? String ?? "<nil>"
                     print("[DriverInstall]   CFBundleIdentifier=\(bid) CFBundleVersion=\(ver)")

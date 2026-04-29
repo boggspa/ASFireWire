@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_APP="${1:-"$ROOT_DIR/build/DerivedDataLocalSignedInstallOnly/Build/Products/Debug/ASFW.app"}"
-DEST_APP="${ASFW_LOCAL_APP_DEST:-/Applications/ASFWLocal.app}"
+DEST_APP="${ASFW_LOCAL_APP_DEST:-/Applications/ASFWLychzord.app}"
 APP_ENTITLEMENTS="${ASFW_LOCAL_APP_ENTITLEMENTS:-"$ROOT_DIR/build/DerivedDataLocalSignedInstallOnly/Build/Intermediates.noindex/ASFW.build/Debug/ASFW.build/ASFW.app.xcent"}"
 
 if [[ ! -d "$SOURCE_APP" ]]; then

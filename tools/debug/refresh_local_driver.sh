@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DRIVER_ID="${ASFW_DRIVER_ID:-com.chrisizatt.ASFWLocal.ASFWDriver}"
-APP_PATH="${ASFW_LOCAL_APP:-/Applications/ASFWLocal.app}"
+DRIVER_ID="${ASFW_DRIVER_ID:-com.lychzord.ASFWTest.ASFWDriver}"
+APP_PATH="${ASFW_LOCAL_APP:-/Applications/ASFWLychzord.app}"
 EXPECTED_CDHASH="${ASFW_EXPECTED_CDHASH:-}"
 SNAP_BASE="${ASFW_REFRESH_SNAPSHOT_DIR:-/tmp/asfw-refresh-$(date +%Y%m%d-%H%M%S)}"
 TIMEOUT_SECONDS="${ASFW_REFRESH_TIMEOUT_SECONDS:-45}"
@@ -15,7 +15,7 @@ Usage: $0 [--expected-cdhash HASH] [--snapshot-dir DIR]
 Performs the controlled refresh needed after staging a replacement local
 DriverKit system extension:
   1. lightweight pre-refresh hygiene snapshot
-  2. quit ASFWLocal.app
+  2. quit ASFWLychzord.app
   3. collect ASFW DriverKit user-server PIDs, then terminate those PIDs via one
      admin prompt
   4. restart coreaudiod via the same admin prompt
