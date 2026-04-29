@@ -38,7 +38,8 @@ check_driver_profile() {
 }
 
 check_repo() {
-  [[ "$(git rev-parse --short HEAD)" == "c4d6278" || -n "$(git diff --name-only)" ]]
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+    [[ "$(git rev-parse --abbrev-ref HEAD)" == "lych2-notarised-v16" ]]
 }
 
 printf 'ASFireWire Lych2 notarised preflight\n'
