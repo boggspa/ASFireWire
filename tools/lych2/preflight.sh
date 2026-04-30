@@ -63,7 +63,8 @@ Preflight failed. Create/refresh Developer ID distribution profiles for:
   driver: $DRIVER_ID
 
 The profiles must not be development profiles, must not contain get-task-allow,
-and must not be limited to ProvisionedDevices. Store notary credentials with:
+and must not be limited to ProvisionedDevices. The app profile must include
+System Extension plus DriverKit user-client access. Store notary credentials with:
 
   xcrun notarytool store-credentials $NOTARY_PROFILE --team-id $TEAM_ID
 

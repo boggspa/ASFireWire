@@ -100,6 +100,7 @@ validate_profile() {
   case "$kind" in
     app)
       profile_true "$plist" 'com.apple.developer.system-extension.install' || return 1
+      profile_has_key "$plist" 'com.apple.developer.driverkit.userclient-access' || return 1
       ;;
   esac
 }
@@ -121,7 +122,7 @@ find_profile() {
   if [[ -n "$explicit" ]]; then
     [[ -f "$explicit" ]] || fail "$kind profile not found: $explicit"
     validate_profile "$explicit" "$bundle_id" "$kind" "$tmp" "$@" ||
-      fail "$kind profile is not a matching Developer ID distribution profile: $explicit"
+      fail "$kind profile is not a matching Developer ID distribution profile: $explicit. For the app profile, confirm System Extension and DriverKit Communicates with Drivers are enabled."
     rm -f "$tmp"
     printf '%s\n' "$explicit"
     return 0

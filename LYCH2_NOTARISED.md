@@ -18,7 +18,9 @@ Create Developer ID distribution provisioning profiles for both bundle IDs. The 
 The app identifier/profile must include:
 
 - `com.apple.developer.system-extension.install`
-- `com.apple.developer.driverkit.userclient-access`
+- `com.apple.developer.driverkit.userclient-access` (Apple Developer portal label: DriverKit Communicates with Drivers)
+
+Do not substitute DriverKit Allow Third Party UserClients for DriverKit Communicates with Drivers on the app identifier. The former does not authorize the app's `userclient-access` entitlement.
 
 The driver identifier/profile must have these capabilities enabled in the Apple Developer portal, even if the downloaded profile's CMS `Entitlements` dictionary only lists the app identifier and team:
 
