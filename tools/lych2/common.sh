@@ -122,7 +122,7 @@ find_profile() {
   if [[ -n "$explicit" ]]; then
     [[ -f "$explicit" ]] || fail "$kind profile not found: $explicit"
     validate_profile "$explicit" "$bundle_id" "$kind" "$tmp" "$@" ||
-      fail "$kind profile is not a matching Developer ID distribution profile: $explicit. For the app profile, confirm System Extension and DriverKit Communicates with Drivers are enabled."
+      fail "$kind profile is not a matching Developer ID distribution profile: $explicit. For the app profile, Apple must grant com.apple.developer.driverkit.userclient-access; DriverKit Communicates with Drivers is not the macOS substitute."
     rm -f "$tmp"
     printf '%s\n' "$explicit"
     return 0
