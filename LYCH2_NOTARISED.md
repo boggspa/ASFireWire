@@ -11,6 +11,21 @@ This copy starts from `asfw-v15-alesis-logic-clean-20260429` and prepares a v16 
 - DriverKit minimum: `24.0`
 - Release app name: `ASFWLych2Notarised.app`
 
+## Current Status - 2026-04-30
+
+The first notarised v16 package was signed and accepted by Apple's notary service, but it must not be sent to Lychzord. macOS accepted the notarisation ticket and Gatekeeper assessment, then refused to launch the app with `launchctl error 163`, which maps to `Security policy issue`.
+
+Root cause: the app binary was signed with `com.apple.developer.driverkit.userclient-access`, but the app provisioning profile only authorized `com.apple.developer.system-extension.install`. Notarisation alone does not prove the provisioning profile authorizes every runtime entitlement.
+
+Apple entitlement request submitted:
+
+- Request ID: `H5JJ76CS3S`
+- Requested DriverKit entitlements: Audio, PCI Transport, UserClient Access
+- PCI Vendor ID: `4545` (`0x11c1`, Agere/Lucent FireWire OHCI controller)
+- UserClient Bundle IDs: `com.chrisizatt.ASFWLocal.ASFWDriver`
+
+This repo is parked until Apple responds. If Apple approves the request, create fresh Developer ID provisioning profiles, rerun preflight, rebuild, sign, notarise, staple, validate, and launch-test the app before sharing it. If Apple declines the request, do not distribute a Chris-signed installable build; leave wider distribution/signing decisions to Mr MIDI and keep this copy as diagnostic/research material only.
+
 ## Required Apple Assets
 
 Create Developer ID distribution provisioning profiles for both bundle IDs. The profiles must not contain `get-task-allow`, and must not be limited to registered devices.
