@@ -13,14 +13,14 @@ This copy starts from `asfw-v15-alesis-logic-clean-20260429` and prepares a v16 
 
 ## Required Apple Assets
 
-Create Developer ID distribution provisioning profiles for both bundle IDs. The profiles must not be development profiles, must not contain `get-task-allow`, and must not be limited to registered devices.
+Create Developer ID distribution provisioning profiles for both bundle IDs. The profiles must not contain `get-task-allow`, and must not be limited to registered devices.
 
-The app profile must include:
+The app identifier/profile must include:
 
 - `com.apple.developer.system-extension.install`
 - `com.apple.developer.driverkit.userclient-access`
 
-The driver profile must include:
+The driver identifier/profile must have these capabilities enabled in the Apple Developer portal, even if the downloaded profile's CMS `Entitlements` dictionary only lists the app identifier and team:
 
 - `com.apple.developer.driverkit`
 - `com.apple.developer.driverkit.family.audio`

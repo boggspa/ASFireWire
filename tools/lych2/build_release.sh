@@ -8,7 +8,10 @@ source "$SCRIPT_DIR/common.sh"
 cd "$ROOT_DIR"
 
 log "cleaning release output"
-rm -rf "$DERIVED" "$DIST_DIR"
+rm -rf "$DERIVED" "$DIST_DIR" || {
+  sleep 1
+  rm -rf "$DERIVED" "$DIST_DIR"
+}
 mkdir -p "$DIST_DIR"
 
 log "building unsigned Release app for manual Developer ID signing"

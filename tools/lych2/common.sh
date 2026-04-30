@@ -97,18 +97,9 @@ validate_profile() {
   [[ "$(profile_get_task_allow "$plist")" != "true" ]] || return 1
   ! profile_has_devices "$plist" || return 1
 
-  local required
-  for required in "$@"; do
-    profile_has_key "$plist" "$required" || return 1
-  done
-
   case "$kind" in
     app)
       profile_true "$plist" 'com.apple.developer.system-extension.install' || return 1
-      ;;
-    driver)
-      profile_true "$plist" 'com.apple.developer.driverkit' || return 1
-      profile_true "$plist" 'com.apple.developer.driverkit.family.audio' || return 1
       ;;
   esac
 }
@@ -185,16 +176,11 @@ developer_id_identity() {
 }
 
 resolve_app_profile() {
-  find_profile "$APP_ID" app \
-    'com.apple.developer.system-extension.install' \
-    'com.apple.developer.driverkit.userclient-access'
+  find_profile "$APP_ID" app
 }
 
 resolve_driver_profile() {
-  find_profile "$DRIVER_ID" driver \
-    'com.apple.developer.driverkit' \
-    'com.apple.developer.driverkit.family.audio' \
-    'com.apple.developer.driverkit.transport.pci'
+  find_profile "$DRIVER_ID" driver
 }
 
 make_resolved_entitlements() {

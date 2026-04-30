@@ -31,7 +31,7 @@ log "validating Gatekeeper assessment"
 /usr/sbin/spctl --assess --type execute --verbose=4 "$APP_PATH"
 
 log "creating final distributable zip"
-/usr/bin/ditto -c -k --keepParent --sequesterRsrc "$APP_PATH" "$final_zip"
+COPYFILE_DISABLE=1 /usr/bin/ditto -c -k --keepParent --norsrc --noextattr --noqtn --noacl "$APP_PATH" "$final_zip"
 /usr/bin/shasum -a 256 "$final_zip" > "$final_zip.sha256"
 
 printf 'Notarised app:\n  %s\n' "$APP_PATH"
