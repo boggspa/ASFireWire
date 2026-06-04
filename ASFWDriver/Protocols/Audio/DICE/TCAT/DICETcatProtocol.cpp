@@ -12,6 +12,28 @@
 
 namespace ASFW::Audio::DICE::TCAT {
 
+namespace {
+
+[[nodiscard]] bool HasUsableRuntimeCaps(const AudioStreamRuntimeCaps& caps) noexcept {
+    return caps.sampleRateHz != 0 &&
+        caps.hostInputPcmChannels != 0 &&
+        caps.hostOutputPcmChannels != 0;
+}
+
+[[nodiscard]] bool ExtensionSectionsEmpty(const ExtensionSections& sections) noexcept {
+    return sections.caps.IsEmpty() &&
+        sections.command.IsEmpty() &&
+        sections.mixer.IsEmpty() &&
+        sections.peak.IsEmpty() &&
+        sections.router.IsEmpty() &&
+        sections.streamFormat.IsEmpty() &&
+        sections.currentConfig.IsEmpty() &&
+        sections.standalone.IsEmpty() &&
+        sections.application.IsEmpty();
+}
+
+} // namespace
+
 DICETcatProtocol::DICETcatProtocol(Protocols::Ports::FireWireBusOps& busOps,
                                    Protocols::Ports::FireWireBusInfo& busInfo,
                                    uint16_t nodeId,
@@ -76,6 +98,14 @@ bool DICETcatProtocol::GetRuntimeAudioStreamCaps(AudioStreamRuntimeCaps& outCaps
 
 void DICETcatProtocol::RefreshRuntimeAudioStreamCaps(VoidCallback callback) {
     EnsureRuntimeCapsLoaded(std::move(callback));
+}
+
+const char* DICETcatProtocol::GetRuntimeAudioStreamCapsFailureReason() const {
+    return runtimeCapsFailureReason_.load(std::memory_order_acquire);
+}
+
+const char* DICETcatProtocol::GetRuntimeAudioStreamCapsSource() const {
+    return runtimeCapsSource_.load(std::memory_order_acquire);
 }
 
 void DICETcatProtocol::PrepareDuplex(const AudioDuplexChannels& channels,
@@ -242,7 +272,20 @@ void DICETcatProtocol::EnsureSectionsLoaded(VoidCallback callback) {
 
     diceReader_.ReadGeneralSections([this, callback = std::move(callback)](IOReturn status, GeneralSections sections) mutable {
         if (status != kIOReturnSuccess) {
+            SetRuntimeCapsDiagnostic("standard_dice_sections_read_failed", "standard-dice");
             callback(status);
+            return;
+        }
+
+        if (sections.IsEmpty()) {
+            SetRuntimeCapsDiagnostic("standard_dice_sections_empty", "standard-dice");
+            callback(kIOReturnNoResources);
+            return;
+        }
+
+        if (!sections.HasStandardStreamGeometry()) {
+            SetRuntimeCapsDiagnostic("standard_dice_sections_invalid", "standard-dice");
+            callback(kIOReturnNoResources);
             return;
         }
 
@@ -265,7 +308,7 @@ void DICETcatProtocol::EnsureRuntimeCapsLoaded(VoidCallback callback) {
 
     EnsureSectionsLoaded([this, callback = std::move(callback)](IOReturn sectionStatus) mutable {
         if (sectionStatus != kIOReturnSuccess) {
-            callback(sectionStatus);
+            TryLoadExtensionRuntimeCaps(48000U, std::move(callback));
             return;
         }
 
@@ -280,7 +323,8 @@ void DICETcatProtocol::EnsureRuntimeCapsLoaded(VoidCallback callback) {
             sections_,
             [this, state, callback = std::move(callback)](IOReturn globalStatus, GlobalState global) mutable {
                 if (globalStatus != kIOReturnSuccess) {
-                    callback(globalStatus);
+                    SetRuntimeCapsDiagnostic("standard_dice_global_read_failed", "standard-dice");
+                    TryLoadExtensionRuntimeCaps(48000U, std::move(callback));
                     return;
                 }
 
@@ -289,7 +333,8 @@ void DICETcatProtocol::EnsureRuntimeCapsLoaded(VoidCallback callback) {
                     sections_,
                     [this, state, callback = std::move(callback)](IOReturn txStatus, StreamConfig tx) mutable {
                         if (txStatus != kIOReturnSuccess) {
-                            callback(txStatus);
+                            SetRuntimeCapsDiagnostic("standard_dice_tx_read_failed", "standard-dice");
+                            TryLoadExtensionRuntimeCaps(state->global.sampleRate, std::move(callback));
                             return;
                         }
 
@@ -298,15 +343,73 @@ void DICETcatProtocol::EnsureRuntimeCapsLoaded(VoidCallback callback) {
                             sections_,
                             [this, state, callback = std::move(callback)](IOReturn rxStatus, StreamConfig rx) mutable {
                                 if (rxStatus != kIOReturnSuccess) {
-                                    callback(rxStatus);
+                                    SetRuntimeCapsDiagnostic("standard_dice_rx_read_failed", "standard-dice");
+                                    TryLoadExtensionRuntimeCaps(state->global.sampleRate, std::move(callback));
                                     return;
                                 }
 
                                 state->rx = rx;
                                 CacheRuntimeCaps(state->global, state->tx, state->rx);
-                                callback(kIOReturnSuccess);
+                                AudioStreamRuntimeCaps caps{};
+                                (void)GetRuntimeAudioStreamCaps(caps);
+                                if (HasUsableRuntimeCaps(caps)) {
+                                    SetRuntimeCapsDiagnostic("none", "standard-dice");
+                                    callback(kIOReturnSuccess);
+                                    return;
+                                }
+
+                                ResetRuntimeCaps();
+                                SetRuntimeCapsDiagnostic("standard_dice_zero_caps", "standard-dice");
+                                TryLoadExtensionRuntimeCaps(state->global.sampleRate, std::move(callback));
                             });
                     });
+            });
+    });
+}
+
+void DICETcatProtocol::TryLoadExtensionRuntimeCaps(uint32_t sampleRateHz, VoidCallback callback) {
+    diceReader_.ReadExtensionSections([this, sampleRateHz, callback = std::move(callback)](
+                                          IOReturn status,
+                                          ExtensionSections sections) mutable {
+        if (status != kIOReturnSuccess) {
+            SetRuntimeCapsDiagnostic("extension_sections_read_failed", "extension-current-config");
+            callback(status);
+            return;
+        }
+
+        if (ExtensionSectionsEmpty(sections)) {
+            SetRuntimeCapsDiagnostic("extension_sections_empty", "extension-current-config");
+            callback(kIOReturnNoResources);
+            return;
+        }
+
+        if (sections.currentConfig.IsEmpty()) {
+            SetRuntimeCapsDiagnostic("extension_current_config_unavailable", "extension-current-config");
+            callback(kIOReturnNoResources);
+            return;
+        }
+
+        const uint32_t streamOffset = CurrentConfigStreamOffsetForSampleRate(sampleRateHz);
+        diceReader_.ReadExtensionCurrentStreamCaps(
+            sections,
+            streamOffset,
+            sampleRateHz,
+            [this, callback = std::move(callback)](IOReturn streamStatus, AudioStreamRuntimeCaps caps) mutable {
+                if (streamStatus != kIOReturnSuccess) {
+                    SetRuntimeCapsDiagnostic("extension_stream_config_read_failed", "extension-current-config");
+                    callback(streamStatus);
+                    return;
+                }
+
+                if (!HasUsableRuntimeCaps(caps)) {
+                    SetRuntimeCapsDiagnostic("extension_stream_config_empty", "extension-current-config");
+                    callback(kIOReturnNoResources);
+                    return;
+                }
+
+                CacheRuntimeCaps(caps);
+                SetRuntimeCapsDiagnostic("extension_current_config_counts_only", "extension-current-config");
+                callback(kIOReturnSuccess);
             });
     });
 }
@@ -351,6 +454,22 @@ void DICETcatProtocol::ResetRuntimeCaps() noexcept {
     hostToDeviceActiveStreams_.store(0, std::memory_order_relaxed);
     deviceToHostIsoChannel_.store(AudioStreamRuntimeCaps::kInvalidIsoChannel, std::memory_order_relaxed);
     hostToDeviceIsoChannel_.store(AudioStreamRuntimeCaps::kInvalidIsoChannel, std::memory_order_relaxed);
+    SetRuntimeCapsDiagnostic("not_attempted", "none");
+}
+
+void DICETcatProtocol::SetRuntimeCapsDiagnostic(const char* reason, const char* source) noexcept {
+    runtimeCapsFailureReason_.store(reason ? reason : "unknown", std::memory_order_release);
+    runtimeCapsSource_.store(source ? source : "unknown", std::memory_order_release);
+}
+
+uint32_t DICETcatProtocol::CurrentConfigStreamOffsetForSampleRate(uint32_t sampleRateHz) noexcept {
+    if (sampleRateHz == 0 || sampleRateHz <= 48000U) {
+        return CurrentConfigOffset::kLowStream;
+    }
+    if (sampleRateHz <= 96000U) {
+        return CurrentConfigOffset::kMiddleStream;
+    }
+    return CurrentConfigOffset::kHighStream;
 }
 
 } // namespace ASFW::Audio::DICE::TCAT

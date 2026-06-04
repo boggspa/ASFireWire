@@ -11,6 +11,7 @@
 #include <DriverKit/IOLib.h>
 #include <DriverKit/OSSharedPtr.h>
 #include <atomic>
+#include <cstring>
 #include <memory>
 #include "ASFWAudioNub.h"
 #include <string>
@@ -28,6 +29,26 @@ namespace {
 [[nodiscard]] bool HasInvalidPlaybackIso(const AudioStreamRuntimeCaps& caps) noexcept {
     return caps.hostOutputPcmChannels > 0 &&
         caps.hostToDeviceIsoChannel == AudioStreamRuntimeCaps::kInvalidIsoChannel;
+}
+
+[[nodiscard]] const char* RuntimeCapsDiagnosticReason(const IDeviceProtocol& protocol,
+                                                      const char* fallback) noexcept {
+    const char* reason = protocol.GetRuntimeAudioStreamCapsFailureReason();
+    if (!reason || reason[0] == '\0' ||
+        std::strcmp(reason, "none") == 0 ||
+        std::strcmp(reason, "not_attempted") == 0) {
+        return fallback;
+    }
+    return reason;
+}
+
+[[nodiscard]] const char* RuntimeCapsDiagnosticSource(const IDeviceProtocol& protocol,
+                                                      const char* fallback) noexcept {
+    const char* source = protocol.GetRuntimeAudioStreamCapsSource();
+    if (!source || source[0] == '\0' || std::strcmp(source, "none") == 0) {
+        return fallback;
+    }
+    return source;
 }
 
 [[nodiscard]] Model::DICEBackendDiagnostic MakeDICEDiagnostic(
@@ -329,9 +350,14 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
 
     AudioStreamRuntimeCaps caps{};
     const bool ready = record->protocol->GetRuntimeAudioStreamCaps(caps);
+    const char* runtimeCapsReason =
+        RuntimeCapsDiagnosticReason(*record->protocol, "runtime_caps_not_ready");
+    const bool extensionCountsOnly =
+        ready && std::strcmp(runtimeCapsReason, "extension_current_config_counts_only") == 0;
     bool usedKnownProfile = false;
 
-    if (!ready || caps.sampleRateHz == 0 || caps.hostInputPcmChannels == 0 || caps.hostOutputPcmChannels == 0) {
+    if (extensionCountsOnly || !ready || caps.sampleRateHz == 0 ||
+        caps.hostInputPcmChannels == 0 || caps.hostOutputPcmChannels == 0) {
         if (DICE::TCAT::TryGetKnownDICEProfile(record->vendorId, record->modelId, caps)) {
             usedKnownProfile = true;
             ASFW_LOG_WARNING(Audio,
@@ -361,8 +387,8 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
                 auto diagnostic = MakeDICEDiagnostic(*record,
                                                      "refresh_pending",
                                                      "runtime_caps_refresh_already_pending",
-                                                     nullptr,
-                                                     "runtime-discovery",
+                                                     extensionCountsOnly ? &caps : nullptr,
+                                                     RuntimeCapsDiagnosticSource(*record->protocol, "runtime-discovery"),
                                                      attempt,
                                                      kCapsRetryMaxAttempts);
                 (void)publisher_.PublishDICEDiagnostic(diagnostic, "DICE");
@@ -377,9 +403,9 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
                          kCapsRetryMaxAttempts);
                 auto diagnostic = MakeDICEDiagnostic(*record,
                                                      "refreshing",
-                                                     "runtime_caps_not_ready",
-                                                     nullptr,
-                                                     "runtime-discovery",
+                                                     runtimeCapsReason,
+                                                     extensionCountsOnly ? &caps : nullptr,
+                                                     RuntimeCapsDiagnosticSource(*record->protocol, "runtime-discovery"),
                                                      attempt,
                                                      kCapsRetryMaxAttempts);
                 (void)publisher_.PublishDICEDiagnostic(diagnostic, "DICE");
@@ -405,7 +431,9 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
                                                                          "failed",
                                                                          "runtime_caps_refresh_unsupported",
                                                                          nullptr,
-                                                                         "runtime-discovery",
+                                                                         diagRecord->protocol
+                                                                             ? RuntimeCapsDiagnosticSource(*diagRecord->protocol, "runtime-discovery")
+                                                                             : "runtime-discovery",
                                                                          0,
                                                                          kCapsRetryMaxAttempts,
                                                                          status);
@@ -427,9 +455,13 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
                                 if (const auto* diagRecord = registry_.FindByGuid(guid)) {
                                     auto diagnostic = MakeDICEDiagnostic(*diagRecord,
                                                                          "failed",
-                                                                         "runtime_caps_refresh_failed",
+                                                                         diagRecord->protocol
+                                                                             ? RuntimeCapsDiagnosticReason(*diagRecord->protocol, "runtime_caps_refresh_failed")
+                                                                             : "runtime_caps_refresh_failed",
                                                                          nullptr,
-                                                                         "runtime-discovery",
+                                                                         diagRecord->protocol
+                                                                             ? RuntimeCapsDiagnosticSource(*diagRecord->protocol, "runtime-discovery")
+                                                                             : "runtime-discovery",
                                                                          0,
                                                                          kCapsRetryMaxAttempts,
                                                                          status);
@@ -462,9 +494,9 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
                            guid);
             auto diagnostic = MakeDICEDiagnostic(*record,
                                                  "failed",
-                                                 "runtime_caps_not_ready",
-                                                 nullptr,
-                                                 "runtime-discovery",
+                                                 runtimeCapsReason,
+                                                 extensionCountsOnly ? &caps : nullptr,
+                                                 RuntimeCapsDiagnosticSource(*record->protocol, "runtime-discovery"),
                                                  kCapsRetryMaxAttempts,
                                                  kCapsRetryMaxAttempts);
             (void)publisher_.PublishDICEDiagnostic(diagnostic, "DICE");
@@ -484,7 +516,7 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
                                              "failed",
                                              "unsupported_multi_stream_geometry",
                                              &caps,
-                                             usedKnownProfile ? "known-profile" : "runtime-discovery");
+                                             usedKnownProfile ? "known-profile" : RuntimeCapsDiagnosticSource(*record->protocol, "runtime-discovery"));
         (void)publisher_.PublishDICEDiagnostic(diagnostic, "DICE");
         return;
     }
@@ -501,17 +533,18 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
                        caps.hostToDeviceIsoChannel);
         auto diagnostic = MakeDICEDiagnostic(*record,
                                              "failed",
-                                             "invalid_runtime_caps",
+                                             RuntimeCapsDiagnosticReason(*record->protocol, "invalid_runtime_caps"),
                                              &caps,
-                                             usedKnownProfile ? "known-profile" : "runtime-discovery");
+                                             usedKnownProfile ? "known-profile" : RuntimeCapsDiagnosticSource(*record->protocol, "runtime-discovery"));
         (void)publisher_.PublishDICEDiagnostic(diagnostic, "DICE");
         return;
     }
 
+    const char* capsSource = usedKnownProfile ? "known-profile" : RuntimeCapsDiagnosticSource(*record->protocol, "runtime-discovery");
     ASFW_LOG(Audio,
              "DiceAudioBackend: publishing DICE caps for GUID=%llx source=%{public}s rate=%u in=%u out=%u d2hStreams=%u h2dStreams=%u d2hSlots=%u h2dSlots=%u",
              guid,
-             usedKnownProfile ? "known-profile" : "runtime-discovery",
+             capsSource,
              caps.sampleRateHz,
              caps.hostInputPcmChannels,
              caps.hostOutputPcmChannels,
@@ -523,7 +556,7 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
                                          "published",
                                          "coreaudio_publication_allowed",
                                          &caps,
-                                         usedKnownProfile ? "known-profile" : "runtime-discovery");
+                                         capsSource);
     (void)publisher_.PublishDICEDiagnostic(diagnostic, "DICE");
 
     Model::ASFWAudioDevice dev{};
@@ -550,7 +583,7 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
     dev.diceRuntimeInfo = Model::DICEPublishedRuntimeInfo{
         .valid = true,
         .protocolName = record->protocol ? record->protocol->GetName() : "TCAT DICE",
-        .capsSource = usedKnownProfile ? "known-profile" : "runtime-discovery",
+        .capsSource = capsSource,
         .hostInputPcmChannels = caps.hostInputPcmChannels,
         .hostOutputPcmChannels = caps.hostOutputPcmChannels,
         .deviceToHostAm824Slots = caps.deviceToHostAm824Slots,

@@ -82,6 +82,12 @@ struct OverviewView: View {
                                 lifecycleRow("Driver Service", viewModel.lifecycleStatus.driverServiceLoaded ? "Loaded" : "Not loaded")
                                 lifecycleRow("ASFW Audio Nub", yesNo(viewModel.lifecycleStatus.audioNubVisible))
                                 lifecycleRow(coreAudioLifecycleLabel, coreAudioLifecycleValue)
+                                if let runtimeState = viewModel.lifecycleStatus.audioRuntime?.state {
+                                    lifecycleRow("Audio stream", runtimeState.replacingOccurrences(of: "_", with: " "))
+                                }
+                                if let runtimePhase = viewModel.lifecycleStatus.audioRuntime?.phase {
+                                    lifecycleRow("Stream phase", runtimePhase.replacingOccurrences(of: "_", with: " "))
+                                }
                                 lifecycleRow("Debug Tools", viewModel.userClientConnected ? "Connected" : "Not connected")
                                 lifecycleRow("Action", viewModel.lifecycleStatus.recommendedAction.displayName)
                                 lifecycleRow("Installed driver matches app", installedDriverMatchesAppText)

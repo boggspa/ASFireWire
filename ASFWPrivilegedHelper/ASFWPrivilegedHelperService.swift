@@ -203,6 +203,14 @@ final class ASFWPrivilegedHelperService: NSObject, ASFWPrivilegedHelperProtocol 
             writeCommand("/usr/sbin/ioreg", ["-p", "IOService", "-l", "-w0", "-r", "-c", "ASFWDriver"], to: dir.appendingPathComponent("ioreg_asfw_driver.txt"))
             writeCommand("/usr/sbin/ioreg", ["-p", "IOService", "-l", "-w0", "-r", "-c", "ASFWAudioNub"], to: dir.appendingPathComponent("ioreg_asfw_audio_nub.txt"))
             writeCommand("/usr/sbin/ioreg", ["-p", "IOService", "-l", "-w0", "-r", "-c", "ASFWAudioDriver"], to: dir.appendingPathComponent("ioreg_asfw_audio_driver.txt"))
+            writeCommand("/usr/sbin/system_profiler", ["SPThunderboltDataType"], to: dir.appendingPathComponent("thunderbolt.txt"))
+            writeCommand("/usr/sbin/system_profiler", ["SPFireWireDataType"], to: dir.appendingPathComponent("firewire.txt"))
+            writeShellCommand(
+                #"/usr/sbin/ioreg -p IOService -l -w0 | /usr/bin/grep -Ei -A80 -B30 'pci11c1,5901|pciclass,0c0010|0c0010|AppleFWOHCI|ASFWDriver|IOFireWire|FireWire|IOPCITunnelCompatible|Thunderbolt' || true"#,
+                to: dir.appendingPathComponent("ioreg_firewire_provider.txt"))
+            writeShellCommand(
+                #"/usr/bin/log show --last 30m --style compact --predicate 'process == "sysextd" OR process CONTAINS[c] "ASFW" OR eventMessage CONTAINS[c] "ASFW" OR eventMessage CONTAINS[c] "DriverKit" OR eventMessage CONTAINS[c] "com.lychzord.ASFWTest" OR eventMessage CONTAINS[c] "AppleFWOHCI" OR eventMessage CONTAINS[c] "IOPCIDevice" OR eventMessage CONTAINS[c] "0c0010"' | /usr/bin/tail -500"#,
+                to: dir.appendingPathComponent("recent_driverkit_logs.txt"))
             if includeCoreAudio {
                 writeCommand("/usr/sbin/system_profiler", ["SPAudioDataType"], to: dir.appendingPathComponent("coreaudio.txt"))
             } else {
@@ -223,6 +231,11 @@ final class ASFWPrivilegedHelperService: NSObject, ASFWPrivilegedHelperProtocol 
         let zombies = readText(dir.appendingPathComponent("zombies.txt"))
             .split(whereSeparator: \.isNewline)
             .filter { !$0.hasPrefix("Command:") && !$0.hasPrefix("Exit:") && !$0.hasPrefix("stdout:") && !$0.hasPrefix("stderr:") }
+        let providerOutput = readText(dir.appendingPathComponent("ioreg_firewire_provider.txt"))
+        let ohciProviderVisible = providerOutput.localizedCaseInsensitiveContains("pciclass,0c0010")
+            || providerOutput.localizedCaseInsensitiveContains("pci11c1,5901")
+            || providerOutput.localizedCaseInsensitiveContains("AppleFWOHCI")
+        let asfwProviderMatched = providerOutput.localizedCaseInsensitiveContains("ASFWDriver")
         return """
         ASFW maintenance summary
         Label: \(label)
@@ -236,6 +249,8 @@ final class ASFWPrivilegedHelperService: NSObject, ASFWPrivilegedHelperProtocol 
         Active CDHash: \(probe.activeCDHash.isEmpty ? "unknown" : probe.activeCDHash)
         Expected CoreAudio device: \(probe.expectedCoreAudioDeviceName ?? "not required")
         Zombie process lines: \(zombies.count)
+        FireWire OHCI provider visible: \(ohciProviderVisible ? "yes" : "no")
+        ASFW provider match visible: \(asfwProviderMatched ? "yes" : "no")
 
         Message:
         \(probe.message)
@@ -252,6 +267,21 @@ final class ASFWPrivilegedHelperService: NSObject, ASFWPrivilegedHelperProtocol 
         let output = runner.run(executable, arguments: arguments, timeout: 20)
         let contents = """
         Command: \(commandLine)
+        Exit: \(output.status)
+
+        stdout:
+        \(output.stdout)
+
+        stderr:
+        \(output.stderr)
+        """
+        try? write(contents, to: url)
+    }
+
+    private func writeShellCommand(_ command: String, to url: URL, timeout: TimeInterval = 30) {
+        let output = runner.run("/bin/sh", arguments: ["-c", command], timeout: timeout)
+        let contents = """
+        Command: /bin/sh -c \(command)
         Exit: \(output.status)
 
         stdout:

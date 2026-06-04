@@ -99,4 +99,40 @@ struct FireWireDeviceProfilesTests {
             .replacingOccurrences(of: "\"ASFWDICELastProbeModelID\" = 1", with: "\"ASFWDICELastProbeModelID\" = 0")
         #expect(MidasDiceProbeDiagnostic.parse(alesis) == nil)
     }
+
+    @Test func midasProbeDiagnosticExplainsExtensionCountsWithoutIsoStreams() {
+        let output = """
+        "ASFWDICELastProbeGUID" = 1217744273727168991
+        "ASFWDICELastProbeVendorID" = 1099583
+        "ASFWDICELastProbeModelID" = 1
+        "ASFWDICELastProbeDeviceName" = "Midas Venice F32"
+        "ASFWDICELastProbeProtocol" = "TCAT DICE"
+        "ASFWDICELastProbeProfileSource" = "FFADO+systemd-hwdb"
+        "ASFWDICELastProbeState" = "failed"
+        "ASFWDICELastProbeFailReason" = "extension_current_config_counts_only"
+        "ASFWDICELastProbeCapsSource" = "extension-current-config"
+        "ASFWDICELastProbeHostInputPcmChannels" = 32
+        "ASFWDICELastProbeHostOutputPcmChannels" = 32
+        "ASFWDICELastProbeDeviceToHostAm824Slots" = 33
+        "ASFWDICELastProbeHostToDeviceAm824Slots" = 33
+        "ASFWDICELastProbeDeviceToHostActiveStreams" = 1
+        "ASFWDICELastProbeHostToDeviceActiveStreams" = 1
+        "ASFWDICELastProbeSampleRateHz" = 48000
+        "ASFWDICELastProbeDeviceToHostIsoChannel" = 255
+        "ASFWDICELastProbeHostToDeviceIsoChannel" = 255
+        "ASFWDICELastProbeAttempt" = 3
+        "ASFWDICELastProbeMaxAttempts" = 3
+        "ASFWDICELastProbeStatus" = 0
+        """
+
+        let diagnostic = MidasDiceProbeDiagnostic.parse(output)
+        #expect(diagnostic?.humanFailReason == "DICE EAP reported channel counts but no active ISO streams")
+        #expect(diagnostic?.capsSource == "extension-current-config")
+        #expect(diagnostic?.channelSummary == "32 in / 32 out")
+        #expect(diagnostic?.isoSummary == "invalid capture / invalid playback")
+        #expect(diagnostic?.attemptSummary == "3/3")
+        #expect(diagnostic?.statusHex == "0x00000000")
+        #expect(diagnostic?.probeLadderSummary == "EAP current-config reported channel counts, but not active ISO channels.")
+        #expect(diagnostic?.publicationDecisionSummary == "Do not publish yet: channel counts are evidence, but ISO channel/start state is not proven.")
+    }
 }

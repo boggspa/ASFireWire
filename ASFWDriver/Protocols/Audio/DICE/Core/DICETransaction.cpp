@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 
 namespace ASFW::Audio::DICE {
@@ -458,6 +459,27 @@ void LogStreamConfigDetails(const char* prefix, const StreamConfig& config) {
         }
     }
 }
+
+uint32_t ClampExtensionStreamCount(uint32_t count) noexcept {
+    return (count > 4u) ? 4u : count;
+}
+
+void LogExtensionCurrentStreamCaps(const AudioStreamRuntimeCaps& caps,
+                                   uint32_t reportedTx,
+                                   uint32_t reportedRx) {
+    ASFW_LOG(DICE,
+             "DICE EAP current stream caps: reportedTx=%u reportedRx=%u "
+             "in=%u out=%u d2hStreams=%u h2dStreams=%u d2hSlots=%u h2dSlots=%u rate=%u",
+             reportedTx,
+             reportedRx,
+             caps.hostInputPcmChannels,
+             caps.hostOutputPcmChannels,
+             caps.deviceToHostActiveStreams,
+             caps.hostToDeviceActiveStreams,
+             caps.deviceToHostAm824Slots,
+             caps.hostToDeviceAm824Slots,
+             caps.sampleRateHz);
+}
 } // anonymous namespace
 
 void DICETransaction::ReadRxStreamConfig(const GeneralSections& sections,
@@ -512,6 +534,152 @@ void DICETransaction::ReadTxStreamConfig(const GeneralSections& sections,
 
                   Common::InvokeSharedCallback(callbackState, kIOReturnSuccess, config);
               });
+}
+
+void DICETransaction::ReadExtensionCurrentStreamCaps(
+    const ExtensionSections& sections,
+    uint32_t streamConfigOffset,
+    uint32_t sampleRateHz,
+    std::function<void(IOReturn, AudioStreamRuntimeCaps)> callback) {
+    auto callbackState = Common::ShareCallback(std::move(callback));
+    if (!sections.currentConfig.HasPayload(streamConfigOffset + ExtensionStreamOffset::kFirstEntry)) {
+        ASFW_LOG(DICE,
+                 "ReadExtensionCurrentStreamCaps: current-config section too small for stream offset 0x%08x (section=%u/%u)",
+                 streamConfigOffset,
+                 sections.currentConfig.offset,
+                 sections.currentConfig.size);
+        Common::InvokeSharedCallback(callbackState, kIOReturnNoResources, AudioStreamRuntimeCaps{});
+        return;
+    }
+
+    const uint32_t headerOffset = ExtensionAbsoluteOffset(sections.currentConfig, streamConfigOffset);
+    io_.ReadBlock(MakeDICEAddress(headerOffset),
+                  static_cast<uint32_t>(ExtensionStreamOffset::kFirstEntry),
+                  [this, callbackState, sections, streamConfigOffset, sampleRateHz](
+                      Async::AsyncStatus status,
+                      std::span<const uint8_t> payload) mutable {
+        if (status != Async::AsyncStatus::kSuccess ||
+            payload.size() < ExtensionStreamOffset::kFirstEntry) {
+            Common::InvokeSharedCallback(callbackState, MapReadStatus(status), AudioStreamRuntimeCaps{});
+            return;
+        }
+
+        const uint32_t reportedTx = ReadBE32(payload.data() + ExtensionStreamOffset::kTxStreamCount);
+        const uint32_t reportedRx = ReadBE32(payload.data() + ExtensionStreamOffset::kRxStreamCount);
+        const uint32_t txCount = ClampExtensionStreamCount(reportedTx);
+        const uint32_t rxCount = ClampExtensionStreamCount(reportedRx);
+        if (txCount == 0 && rxCount == 0) {
+            ASFW_LOG(DICE,
+                     "ReadExtensionCurrentStreamCaps: empty EAP stream table reportedTx=%u reportedRx=%u",
+                     reportedTx,
+                     reportedRx);
+            Common::InvokeSharedCallback(callbackState, kIOReturnNoResources, AudioStreamRuntimeCaps{});
+            return;
+        }
+
+        struct ExtensionReadState {
+            AudioStreamRuntimeCaps caps{};
+            uint32_t reportedTx{0};
+            uint32_t reportedRx{0};
+            uint32_t txCount{0};
+            uint32_t rxCount{0};
+        };
+
+        auto state = std::make_shared<ExtensionReadState>();
+        state->reportedTx = reportedTx;
+        state->reportedRx = reportedRx;
+        state->txCount = txCount;
+        state->rxCount = rxCount;
+        state->caps.sampleRateHz = sampleRateHz != 0 ? sampleRateHz : 48000U;
+        state->caps.deviceToHostIsoChannel = AudioStreamRuntimeCaps::kInvalidIsoChannel;
+        state->caps.hostToDeviceIsoChannel = AudioStreamRuntimeCaps::kInvalidIsoChannel;
+
+        auto readRx = std::make_shared<std::function<void(uint32_t)>>();
+        auto readTx = std::make_shared<std::function<void(uint32_t)>>();
+        std::weak_ptr<std::function<void(uint32_t)>> weakReadRx = readRx;
+        std::weak_ptr<std::function<void(uint32_t)>> weakReadTx = readTx;
+
+        *readRx = [this, callbackState, sections, streamConfigOffset, state, weakReadRx](uint32_t index) mutable {
+            if (index >= state->rxCount) {
+                LogExtensionCurrentStreamCaps(state->caps, state->reportedTx, state->reportedRx);
+                Common::InvokeSharedCallback(callbackState, kIOReturnSuccess, state->caps);
+                return;
+            }
+
+            auto keepAlive = weakReadRx.lock();
+            if (!keepAlive) {
+                Common::InvokeSharedCallback(callbackState, kIOReturnError, AudioStreamRuntimeCaps{});
+                return;
+            }
+
+            const uint32_t entryOffset = streamConfigOffset +
+                ExtensionStreamOffset::kFirstEntry +
+                ((state->txCount + index) * ExtensionStreamOffset::kEntrySize);
+            io_.ReadBlock(MakeDICEAddress(ExtensionAbsoluteOffset(sections.currentConfig, entryOffset)),
+                          8,
+                          [callbackState, state, keepAlive, weakReadRx, index](
+                              Async::AsyncStatus entryStatus,
+                              std::span<const uint8_t> entryPayload) mutable {
+                if (entryStatus != Async::AsyncStatus::kSuccess || entryPayload.size() < 8) {
+                    Common::InvokeSharedCallback(callbackState, MapReadStatus(entryStatus), AudioStreamRuntimeCaps{});
+                    return;
+                }
+
+                const uint32_t pcm = ReadBE32(entryPayload.data() + ExtensionStreamOffset::kEntryAudioChannels);
+                const uint32_t midi = ReadBE32(entryPayload.data() + ExtensionStreamOffset::kEntryMidiPorts);
+                state->caps.hostOutputPcmChannels += pcm;
+                state->caps.hostToDeviceAm824Slots += ComputeAm824Slots(pcm, midi);
+                if (pcm > 0 || midi > 0) {
+                    ++state->caps.hostToDeviceActiveStreams;
+                }
+                if (auto next = weakReadRx.lock()) {
+                    (*next)(index + 1U);
+                }
+            });
+        };
+
+        *readTx = [this, callbackState, sections, streamConfigOffset, state, readRx, weakReadTx, weakReadRx](uint32_t index) mutable {
+            if (index >= state->txCount) {
+                if (auto rx = weakReadRx.lock()) {
+                    (*rx)(0);
+                }
+                return;
+            }
+
+            auto keepAlive = weakReadTx.lock();
+            if (!keepAlive) {
+                Common::InvokeSharedCallback(callbackState, kIOReturnError, AudioStreamRuntimeCaps{});
+                return;
+            }
+
+            const uint32_t entryOffset = streamConfigOffset +
+                ExtensionStreamOffset::kFirstEntry +
+                (index * ExtensionStreamOffset::kEntrySize);
+            io_.ReadBlock(MakeDICEAddress(ExtensionAbsoluteOffset(sections.currentConfig, entryOffset)),
+                          8,
+                          [callbackState, state, keepAlive, weakReadTx, index](
+                              Async::AsyncStatus entryStatus,
+                              std::span<const uint8_t> entryPayload) mutable {
+                if (entryStatus != Async::AsyncStatus::kSuccess || entryPayload.size() < 8) {
+                    Common::InvokeSharedCallback(callbackState, MapReadStatus(entryStatus), AudioStreamRuntimeCaps{});
+                    return;
+                }
+
+                const uint32_t pcm = ReadBE32(entryPayload.data() + ExtensionStreamOffset::kEntryAudioChannels);
+                const uint32_t midi = ReadBE32(entryPayload.data() + ExtensionStreamOffset::kEntryMidiPorts);
+                state->caps.hostInputPcmChannels += pcm;
+                state->caps.deviceToHostAm824Slots += ComputeAm824Slots(pcm, midi);
+                if (pcm > 0 || midi > 0) {
+                    ++state->caps.deviceToHostActiveStreams;
+                }
+                if (auto next = weakReadTx.lock()) {
+                    (*next)(index + 1U);
+                }
+            });
+        };
+
+        (*readTx)(0);
+    });
 }
 
 void DICETransaction::ReadCapabilities(std::function<void(IOReturn, DICECapabilities)> callback) {

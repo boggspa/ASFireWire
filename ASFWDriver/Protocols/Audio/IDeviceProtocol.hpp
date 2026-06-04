@@ -66,6 +66,16 @@ public:
         callback(kIOReturnUnsupported);
     }
 
+    /// Optional diagnostic reason from the last runtime-capability probe.
+    virtual const char* GetRuntimeAudioStreamCapsFailureReason() const {
+        return nullptr;
+    }
+
+    /// Optional source label for runtime-capability data.
+    virtual const char* GetRuntimeAudioStreamCapsSource() const {
+        return nullptr;
+    }
+
     /// Optional bring-up hook to prepare device-side duplex state at 48kHz.
     /// Drivers can call this before any IRM reservation or host IR/IT startup.
     /// Implementations should be idempotent.

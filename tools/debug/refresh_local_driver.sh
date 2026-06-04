@@ -51,12 +51,31 @@ done
 
 active_cdhash() {
   ioreg -p IOService -l -w0 -r -c ASFWDriver 2>/dev/null |
-    awk -F'"' -v id="$DRIVER_ID" '
+    awk -v id="$DRIVER_ID" '
       /CFBundleIdentifier|IOUserServerName|IOPersonalityPublisher/ && index($0, id) { matched = 1 }
-      matched && /IOUserServerCDHash/ { print $4; found = 1; exit }
+      matched && /"IOUserServerCDHash"/ {
+        line = $0
+        sub(/^.*"IOUserServerCDHash"[[:space:]]*=[[:space:]]*"/, "", line)
+        sub(/".*$/, "", line)
+        if (line != $0 && line != "") {
+          print line
+          found = 1
+          exit
+        }
+      }
       END { if (!found) exit 1 }
     ' || ioreg -p IOService -l -w0 -r -c ASFWDriver 2>/dev/null |
-      awk -F'"' '/IOUserServerCDHash/ {print $4; exit}'
+      awk '
+        /"IOUserServerCDHash"/ {
+          line = $0
+          sub(/^.*"IOUserServerCDHash"[[:space:]]*=[[:space:]]*"/, "", line)
+          sub(/".*$/, "", line)
+          if (line != $0 && line != "") {
+            print line
+            exit
+          }
+        }
+      '
 }
 
 driver_pids() {

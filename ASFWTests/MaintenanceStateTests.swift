@@ -185,6 +185,35 @@ struct MaintenanceStateTests {
         #expect(!status.coreAudioDeviceVisible)
     }
 
+    @Test func lifecycleMapsCoreAudioStartTimeoutToRepairRefresh() {
+        let audioNub = """
+        +-o ASFWAudioNub  <class IOUserService>
+          | {
+          |   "ASFWAudioRuntimeState" = "failed_to_start"
+          |   "ASFWAudioRuntimePhase" = "coordinator_start"
+          |   "ASFWAudioLastStatusName" = "timeout"
+          |   "ASFWAudioLastStatus" = 3758097110
+          |   "ASFWAudioRuntimeOK" = No
+          |   "ASFWAudioRuntimeDetail" = "The audio coordinator could not start DICE/isoch streaming for CoreAudio."
+          | }
+        """
+        let status = ASFWMaintenanceLifecycleEvaluator.evaluate(inputs(
+            systemExtensions: activeSystemExtension,
+            driverIoreg: #""IOUserServerCDHash" = "abc123""#,
+            audioNubIoreg: audioNub,
+            coreAudioOutput: "Alesis MultiMix Firewire",
+            expectedCDHash: "abc123",
+            helperStatus: .enabled
+        ))
+
+        #expect(status.health == .repairNeeded)
+        #expect(status.recommendedAction == .repairOnce)
+        #expect(status.audioRuntime?.state == "failed_to_start")
+        #expect(status.audioRuntime?.statusName == "timeout")
+        #expect(status.summary == "CoreAudio can see Alesis, but ASFW failed to start streaming.")
+        #expect(status.copySummary.contains("Audio runtime status: timeout"))
+    }
+
     @Test func lifecycleDoesNotTreatStaleCoreAudioAsHealthyWhenAudioNubMissing() {
         let status = ASFWMaintenanceLifecycleEvaluator.evaluate(inputs(
             systemExtensions: activeSystemExtension,

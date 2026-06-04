@@ -87,6 +87,7 @@ struct MaintenanceLifecycleStatus: Equatable {
     var activeCDHash: String?
     var expectedCDHash: String?
     var expectedCoreAudioDeviceName: String?
+    var audioRuntime: MaintenanceAudioRuntimeTelemetry? = nil
 
     static let unknown = MaintenanceLifecycleStatus(
         health: .unknown,
@@ -103,7 +104,8 @@ struct MaintenanceLifecycleStatus: Equatable {
         stagedDriverPresent: false,
         activeCDHash: nil,
         expectedCDHash: nil,
-        expectedCoreAudioDeviceName: "Alesis MultiMix Firewire"
+        expectedCoreAudioDeviceName: "Alesis MultiMix Firewire",
+        audioRuntime: nil
     )
 
     var isCleanForAudio: Bool {
@@ -153,7 +155,11 @@ struct MaintenanceLifecycleStatus: Equatable {
             "Debug user-client: \(userClientConnected ? "connected" : "unavailable")",
             "Stale uninstall: \(staleTerminatingDriver ? "yes" : "no")",
             "Active CDHash: \(activeCDHash ?? "unknown")",
-            "Expected CDHash: \(expectedCDHash ?? "unknown")"
+            "Expected CDHash: \(expectedCDHash ?? "unknown")",
+            "Audio runtime state: \(audioRuntime?.state ?? "unknown")",
+            "Audio runtime phase: \(audioRuntime?.phase ?? "unknown")",
+            "Audio runtime status: \(audioRuntime?.statusText ?? "unknown")",
+            "Audio runtime detail: \(audioRuntime?.detail ?? "unknown")"
         ].joined(separator: "\n")
     }
 }
@@ -176,6 +182,10 @@ struct ASFWMaintenanceLifecycleEvaluator {
         let cdHashMismatch = expected != nil && summary.activeCDHash != nil && summary.activeCDHash != expected
         let coreAudioProbeUnavailable = inputs.expectedCoreAudioDeviceName != nil
             && ASFWMaintenanceParser.probeOutputUnavailable(inputs.coreAudioOutput)
+        let audioRuntime = ASFWMaintenanceParser.audioRuntimeTelemetry(
+            driverIoregOutput: inputs.driverIoreg,
+            audioNubIoregOutput: inputs.audioNubIoreg
+        )
 
         func status(_ health: MaintenanceHealthState,
                     _ action: MaintenanceRecommendedAction,
@@ -196,7 +206,8 @@ struct ASFWMaintenanceLifecycleEvaluator {
                 stagedDriverPresent: inputs.stagedDriverPresent,
                 activeCDHash: summary.activeCDHash,
                 expectedCDHash: expected,
-                expectedCoreAudioDeviceName: inputs.expectedCoreAudioDeviceName
+                expectedCoreAudioDeviceName: inputs.expectedCoreAudioDeviceName,
+                audioRuntime: audioRuntime
             )
         }
 
@@ -247,6 +258,20 @@ struct ASFWMaintenanceLifecycleEvaluator {
                           .reconnectDevice,
                           "CoreAudio still lists Alesis, but ASFW's audio device is not attached.",
                           "This can be stale CoreAudio state. Wait for the bus to settle, reconnect the FireWire device once, then recheck or capture diagnostics.")
+        }
+
+        if audioNubVisible && audioRuntime?.indicatesStartFailure == true {
+            return status(.repairNeeded,
+                          helperAction(for: inputs.helperStatus, fallback: .repairOnce),
+                          "CoreAudio can see Alesis, but ASFW failed to start streaming.",
+                          "Last stream start returned \(audioRuntime?.statusText ?? "an error"). Close Logic or other audio apps, then use one Repair Driver refresh.")
+        }
+
+        if audioNubVisible && audioRuntime?.indicatesStopFailure == true {
+            return status(.repairNeeded,
+                          helperAction(for: inputs.helperStatus, fallback: .repairOnce),
+                          "ASFW could not stop the audio stream cleanly.",
+                          "Last stream stop returned \(audioRuntime?.statusText ?? "an error"). Close audio apps, then use one Repair Driver refresh before another recording test.")
         }
 
         if audioNubVisible && coreAudioProbeUnavailable {

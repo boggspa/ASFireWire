@@ -192,12 +192,17 @@ struct MidasStatusView: View {
                 statusGrid(rows: [
                     ("State", diagnostic.humanState),
                     ("Fail Reason", diagnostic.humanFailReason),
+                    ("Probe Ladder", diagnostic.probeLadderSummary),
+                    ("Decision", diagnostic.publicationDecisionSummary),
                     ("Caps Source", diagnostic.capsSource),
                     ("Profile Source", diagnostic.profileSource),
                     ("Channels", diagnostic.channelSummary),
                     ("Streams", diagnostic.streamSummary),
                     ("AM824 Slots", diagnostic.slotSummary),
+                    ("ISO Channels", diagnostic.isoSummary),
                     ("Sample Rate", diagnostic.sampleRateHz > 0 ? "\(diagnostic.sampleRateHz) Hz" : "Unknown"),
+                    ("Attempt", diagnostic.attemptSummary),
+                    ("Status", diagnostic.statusHex),
                     ("GUID", diagnostic.guidHex)
                 ])
             } else {

@@ -25,6 +25,8 @@
 #include <DriverKit/IOMemoryMap.h>
 #include <DriverKit/OSDictionary.h>
 #include <DriverKit/OSNumber.h>
+#include <DriverKit/OSString.h>
+#include <DriverKit/OSBoolean.h>
 #include <DriverKit/OSSharedPtr.h>
 
 #include <algorithm>
@@ -68,6 +70,79 @@ struct OutputAudioBufferGeometry {
     uint32_t bytesPerFrame{0};
     uint64_t bufferBytes{0};
 };
+
+static const char* IOReturnShortName(kern_return_t status) {
+    switch (status) {
+        case kIOReturnSuccess:
+            return "success";
+        case kIOReturnNotReady:
+            return "not_ready";
+        case kIOReturnNoMemory:
+            return "no_memory";
+        case kIOReturnBadArgument:
+            return "bad_argument";
+        case kIOReturnUnsupported:
+            return "unsupported";
+        case kIOReturnNotFound:
+            return "not_found";
+        case kIOReturnTimeout:
+            return "timeout";
+        case kIOReturnError:
+            return "error";
+        default:
+            return "ioreturn";
+    }
+}
+
+static void PublishAudioRuntimeTelemetry(ASFWAudioNub* self,
+                                         ASFWAudioNub_IVars* iv,
+                                         const char* state,
+                                         const char* phase,
+                                         kern_return_t status,
+                                         uint32_t rxQueueStatus,
+                                         uint32_t txQueueStatus,
+                                         const char* detail) {
+    if (!self || !iv) {
+        return;
+    }
+
+    auto properties = OSSharedPtr(OSDictionary::withCapacity(12), OSNoRetain);
+    auto stateStr = OSSharedPtr(OSString::withCString(state ? state : "unknown"), OSNoRetain);
+    auto phaseStr = OSSharedPtr(OSString::withCString(phase ? phase : "unknown"), OSNoRetain);
+    auto statusName = OSSharedPtr(OSString::withCString(IOReturnShortName(status)), OSNoRetain);
+    auto detailStr = OSSharedPtr(OSString::withCString(detail ? detail : ""), OSNoRetain);
+    auto statusNum = OSSharedPtr(OSNumber::withNumber(static_cast<uint32_t>(status), 32), OSNoRetain);
+    auto rxStatusNum = OSSharedPtr(OSNumber::withNumber(rxQueueStatus, 32), OSNoRetain);
+    auto txStatusNum = OSSharedPtr(OSNumber::withNumber(txQueueStatus, 32), OSNoRetain);
+    auto attemptNum = OSSharedPtr(OSNumber::withNumber(iv->audioRuntimeAttempt, 64), OSNoRetain);
+    auto guidNum = OSSharedPtr(OSNumber::withNumber(iv->guid, 64), OSNoRetain);
+    auto okBool = OSSharedPtr(status == kIOReturnSuccess ? kOSBooleanTrue : kOSBooleanFalse, OSNoRetain);
+
+    if (!properties || !stateStr || !phaseStr || !statusName || !detailStr ||
+        !statusNum || !rxStatusNum || !txStatusNum || !attemptNum || !guidNum || !okBool) {
+        return;
+    }
+
+    properties->setObject("ASFWAudioRuntimeState", stateStr.get());
+    properties->setObject("ASFWAudioRuntimePhase", phaseStr.get());
+    properties->setObject("ASFWAudioLastStatusName", statusName.get());
+    properties->setObject("ASFWAudioLastStatus", statusNum.get());
+    properties->setObject("ASFWAudioLastRxQueueStatus", rxStatusNum.get());
+    properties->setObject("ASFWAudioLastTxQueueStatus", txStatusNum.get());
+    properties->setObject("ASFWAudioRuntimeAttempt", attemptNum.get());
+    properties->setObject("ASFWAudioRuntimeGUID", guidNum.get());
+    properties->setObject("ASFWAudioRuntimeOK", okBool.get());
+    properties->setObject("ASFWAudioRuntimeDetail", detailStr.get());
+
+    if (const kern_return_t kr = self->SetProperties(properties.get()); kr != kIOReturnSuccess) {
+        ASFW_LOG_WARNING(Audio,
+                         "ASFWAudioNub: failed to publish audio runtime telemetry kr=0x%x state=%{public}s phase=%{public}s status=0x%x",
+                         kr,
+                         state ? state : "unknown",
+                         phase ? phase : "unknown",
+                         status);
+    }
+}
 
 static uint32_t ClampAudioChannels(uint32_t channels) {
     if (channels == 0) {
@@ -731,30 +806,91 @@ kern_return_t IMPL(ASFWAudioNub, CopyOutputAudioMemory)
 kern_return_t IMPL(ASFWAudioNub, StartAudioStreaming)
 {
     if (!ivars || ivars->guid == 0) {
+        PublishAudioRuntimeTelemetry(this,
+                                     ivars,
+                                     "failed_to_start",
+                                     "missing_guid",
+                                     kIOReturnNotReady,
+                                     kIOReturnNotReady,
+                                     kIOReturnNotReady,
+                                     "ASFWAudioNub has no device GUID for this CoreAudio start request.");
         return kIOReturnNotReady;
     }
+
+    ivars->audioRuntimeAttempt++;
+    PublishAudioRuntimeTelemetry(this,
+                                 ivars,
+                                 "starting",
+                                 "start_requested",
+                                 kIOReturnSuccess,
+                                 kIOReturnSuccess,
+                                 kIOReturnSuccess,
+                                 "CoreAudio requested ASFW audio streaming start.");
 
     // Auto-start gating (Info.plist + runtime), useful for debugging discovery without streams.
     if (!ASFW::LogConfig::Shared().IsAudioAutoStartEnabled()) {
         ASFW_LOG(Audio,
                  "ASFWAudioNub: StartAudioStreaming skipped (auto-start disabled) GUID=0x%016llx",
                  ivars->guid);
+        PublishAudioRuntimeTelemetry(this,
+                                     ivars,
+                                     "idle",
+                                     "auto_start_disabled",
+                                     kIOReturnSuccess,
+                                     kIOReturnSuccess,
+                                     kIOReturnSuccess,
+                                     "Audio stream auto-start is disabled; CoreAudio start did not launch isoch transport.");
         return kIOReturnSuccess;
     }
 
     auto* coordinator = GetAudioCoordinator(ivars);
     if (!coordinator) {
         ASFW_LOG(Audio, "ASFWAudioNub: StartAudioStreaming: missing AudioCoordinator");
+        PublishAudioRuntimeTelemetry(this,
+                                     ivars,
+                                     "failed_to_start",
+                                     "missing_audio_coordinator",
+                                     kIOReturnNotReady,
+                                     kIOReturnNotReady,
+                                     kIOReturnNotReady,
+                                     "ASFW could not find the audio coordinator for this device.");
         return kIOReturnNotReady;
     }
 
     // Ensure queues exist before starting isoch.
-    (void)CreateRxQueue(this, ivars);
-    (void)CreateTxQueue(this, ivars);
+    const kern_return_t rxQueueKr = CreateRxQueue(this, ivars);
+    const kern_return_t txQueueKr = CreateTxQueue(this, ivars);
+    PublishAudioRuntimeTelemetry(this,
+                                 ivars,
+                                 "starting",
+                                 "queues_prepared",
+                                 (rxQueueKr == kIOReturnSuccess && txQueueKr == kIOReturnSuccess)
+                                    ? kIOReturnSuccess
+                                    : kIOReturnNotReady,
+                                 static_cast<uint32_t>(rxQueueKr),
+                                 static_cast<uint32_t>(txQueueKr),
+                                 "ASFW prepared CoreAudio receive/transmit queues before starting isoch transport.");
 
     const IOReturn kr = coordinator->StartStreaming(ivars->guid);
     if (kr != kIOReturnSuccess) {
         ASFW_LOG(Audio, "ASFWAudioNub: StartAudioStreaming failed GUID=0x%016llx kr=0x%x", ivars->guid, kr);
+        PublishAudioRuntimeTelemetry(this,
+                                     ivars,
+                                     "failed_to_start",
+                                     "coordinator_start",
+                                     kr,
+                                     static_cast<uint32_t>(rxQueueKr),
+                                     static_cast<uint32_t>(txQueueKr),
+                                     "The audio coordinator could not start DICE/isoch streaming for CoreAudio.");
+    } else {
+        PublishAudioRuntimeTelemetry(this,
+                                     ivars,
+                                     "running",
+                                     "coordinator_start",
+                                     kIOReturnSuccess,
+                                     static_cast<uint32_t>(rxQueueKr),
+                                     static_cast<uint32_t>(txQueueKr),
+                                     "ASFW audio streaming is running.");
     }
     return kr;
 }
@@ -762,17 +898,59 @@ kern_return_t IMPL(ASFWAudioNub, StartAudioStreaming)
 kern_return_t IMPL(ASFWAudioNub, StopAudioStreaming)
 {
     if (!ivars || ivars->guid == 0) {
+        PublishAudioRuntimeTelemetry(this,
+                                     ivars,
+                                     "failed_to_stop",
+                                     "missing_guid",
+                                     kIOReturnNotReady,
+                                     kIOReturnNotReady,
+                                     kIOReturnNotReady,
+                                     "ASFWAudioNub has no device GUID for this CoreAudio stop request.");
         return kIOReturnNotReady;
     }
 
+    PublishAudioRuntimeTelemetry(this,
+                                 ivars,
+                                 "stopping",
+                                 "stop_requested",
+                                 kIOReturnSuccess,
+                                 kIOReturnSuccess,
+                                 kIOReturnSuccess,
+                                 "CoreAudio requested ASFW audio streaming stop.");
+
     auto* coordinator = GetAudioCoordinator(ivars);
     if (!coordinator) {
+        PublishAudioRuntimeTelemetry(this,
+                                     ivars,
+                                     "failed_to_stop",
+                                     "missing_audio_coordinator",
+                                     kIOReturnNotReady,
+                                     kIOReturnNotReady,
+                                     kIOReturnNotReady,
+                                     "ASFW could not find the audio coordinator for this stop request.");
         return kIOReturnNotReady;
     }
 
     const IOReturn kr = coordinator->StopStreaming(ivars->guid);
     if (kr != kIOReturnSuccess) {
         ASFW_LOG(Audio, "ASFWAudioNub: StopAudioStreaming failed GUID=0x%016llx kr=0x%x", ivars->guid, kr);
+        PublishAudioRuntimeTelemetry(this,
+                                     ivars,
+                                     "failed_to_stop",
+                                     "coordinator_stop",
+                                     kr,
+                                     kIOReturnSuccess,
+                                     kIOReturnSuccess,
+                                     "The audio coordinator could not stop DICE/isoch streaming cleanly.");
+    } else {
+        PublishAudioRuntimeTelemetry(this,
+                                     ivars,
+                                     "idle",
+                                     "stop_complete",
+                                     kIOReturnSuccess,
+                                     kIOReturnSuccess,
+                                     kIOReturnSuccess,
+                                     "ASFW audio streaming stopped cleanly.");
     }
     return kr;
 }

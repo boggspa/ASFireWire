@@ -47,11 +47,11 @@ final class MidasStatusViewModel: ObservableObject {
         let connector = self.connector
         DispatchQueue.global(qos: .userInitiated).async {
             let device = connector.getMidasVeniceDevice()
-            let profile = device.flatMap(FireWireDeviceProfiles.bestMatch(for:)) ?? Self.defaultProfile()
             let snapshot = device.flatMap { connector.refreshMidasDiceSnapshot(device: $0) }
-            let identity = device.map { MidasDiscoveredIdentity.make(from: $0, profile: profile) }
 
             Task { @MainActor in
+                let profile = device.flatMap(FireWireDeviceProfiles.bestMatch(for:)) ?? Self.defaultProfile()
+                let identity = device.map { MidasDiscoveredIdentity.make(from: $0, profile: profile) }
                 self.profile = profile
                 self.discoveredIdentity = identity
                 self.diceSnapshot = snapshot
@@ -90,7 +90,11 @@ final class MidasStatusViewModel: ObservableObject {
 
         if let diceProbeDiagnostic {
             lines.append("Last DICE probe: \(diceProbeDiagnostic.probeState), \(diceProbeDiagnostic.humanFailReason)")
+            lines.append("Probe ladder: \(diceProbeDiagnostic.probeLadderSummary)")
             lines.append("Probe caps: \(diceProbeDiagnostic.channelSummary), streams \(diceProbeDiagnostic.streamSummary), source \(diceProbeDiagnostic.capsSource)")
+            lines.append("Probe ISO: \(diceProbeDiagnostic.isoSummary)")
+            lines.append("Probe attempt/status: \(diceProbeDiagnostic.attemptSummary), \(diceProbeDiagnostic.statusHex)")
+            lines.append("Publication decision: \(diceProbeDiagnostic.publicationDecisionSummary)")
             lines.append("Probe IDs: \(diceProbeDiagnostic.vendorHex) / \(diceProbeDiagnostic.modelHex), GUID \(diceProbeDiagnostic.guidHex)")
         } else {
             lines.append("Last DICE probe: unavailable")

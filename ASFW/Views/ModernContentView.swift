@@ -205,6 +205,9 @@ struct ModernContentView: View {
             debugVM.disconnect()
             topologyVM.stopAutoRefresh()
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            RuntimeStatusHUDView(viewModel: driverVM)
+        }
         .onChange(of: topologyVM.topology?.generation) { _, _ in
             // Update available nodes when topology generation changes
             romExplorerVM.refreshAvailableNodes()
@@ -264,6 +267,148 @@ struct ModernContentView: View {
                 }
             }
         }
+    }
+}
+
+private struct RuntimeStatusHUDView: View {
+    @ObservedObject var viewModel: DriverViewModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            hudChip(title: "Lifecycle",
+                    value: lifecycleText,
+                    systemImage: lifecycleIcon,
+                    color: lifecycleColor)
+
+            hudChip(title: "Stream",
+                    value: streamText,
+                    systemImage: "waveform.path.ecg",
+                    color: streamColor)
+
+            hudChip(title: "CoreAudio",
+                    value: coreAudioText,
+                    systemImage: "speaker.wave.2.fill",
+                    color: coreAudioColor)
+
+            hudChip(title: "Debug",
+                    value: viewModel.userClientConnected ? "Connected" : "Disconnected",
+                    systemImage: "ladybug.fill",
+                    color: viewModel.userClientConnected ? .green : .secondary)
+
+            Spacer(minLength: 8)
+
+            if viewModel.isLifecycleRefreshing {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Checking")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+            } else if let checked = viewModel.lastLifecycleCheckDate {
+                Text("Checked \(checked, style: .time)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(.bar)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.25))
+                .frame(height: 1)
+        }
+    }
+
+    private func hudChip(title: String, value: String, systemImage: String, color: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
+            Text(title)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+        }
+        .font(.caption.monospaced())
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.thinMaterial, in: Capsule())
+    }
+
+    private var lifecycleText: String {
+        switch viewModel.lifecycleStatus.health {
+        case .clean: return "Working"
+        case .repairNeeded: return "Attention"
+        case .rebootRequired: return "Reboot"
+        case .uninstalled: return "Not installed"
+        case .unknown: return "Unknown"
+        }
+    }
+
+    private var lifecycleIcon: String {
+        switch viewModel.lifecycleStatus.health {
+        case .clean: return "checkmark.circle.fill"
+        case .repairNeeded: return "wrench.and.screwdriver.fill"
+        case .rebootRequired: return "restart.circle.fill"
+        case .uninstalled: return "arrow.down.circle.fill"
+        case .unknown: return "questionmark.circle.fill"
+        }
+    }
+
+    private var lifecycleColor: Color {
+        switch viewModel.lifecycleStatus.health {
+        case .clean: return .green
+        case .repairNeeded: return .orange
+        case .rebootRequired: return .red
+        case .uninstalled, .unknown: return .secondary
+        }
+    }
+
+    private var streamText: String {
+        guard let runtime = viewModel.lifecycleStatus.audioRuntime else {
+            return "Unknown"
+        }
+        if runtime.indicatesStartFailure || runtime.indicatesStopFailure {
+            return runtime.statusName ?? "Failed"
+        }
+        return runtime.state?.replacingOccurrences(of: "_", with: " ") ?? runtime.statusText
+    }
+
+    private var streamColor: Color {
+        guard let runtime = viewModel.lifecycleStatus.audioRuntime else {
+            return .secondary
+        }
+        if runtime.indicatesStartFailure || runtime.indicatesStopFailure {
+            return .orange
+        }
+        switch runtime.state {
+        case "running": return .green
+        case "starting", "stopping": return .blue
+        case "idle": return .secondary
+        default: return runtime.ok == false ? .orange : .secondary
+        }
+    }
+
+    private var coreAudioText: String {
+        if viewModel.lifecycleStatus.coreAudioProbeUnavailable {
+            return "Delayed"
+        }
+        if viewModel.lifecycleStatus.expectedCoreAudioDeviceName == nil {
+            return "Not required"
+        }
+        return viewModel.lifecycleStatus.coreAudioDeviceVisible ? "Visible" : "Missing"
+    }
+
+    private var coreAudioColor: Color {
+        if viewModel.lifecycleStatus.coreAudioProbeUnavailable {
+            return .blue
+        }
+        if viewModel.lifecycleStatus.expectedCoreAudioDeviceName == nil {
+            return .secondary
+        }
+        return viewModel.lifecycleStatus.coreAudioDeviceVisible ? .green : .orange
     }
 }
 

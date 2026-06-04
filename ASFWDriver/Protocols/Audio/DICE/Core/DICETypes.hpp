@@ -60,6 +60,14 @@ struct Section {
     static Section FromWire(const uint8_t* data) {
         return Deserialize(data);
     }
+
+    [[nodiscard]] constexpr bool IsEmpty() const noexcept {
+        return offset == 0 && size == 0;
+    }
+
+    [[nodiscard]] constexpr bool HasPayload(uint32_t minimumSize = 4) const noexcept {
+        return size >= minimumSize;
+    }
 };
 
 // ============================================================================
@@ -90,6 +98,20 @@ struct GeneralSections {
 
     static GeneralSections FromWire(const uint8_t* data) {
         return Deserialize(data);
+    }
+
+    [[nodiscard]] constexpr bool IsEmpty() const noexcept {
+        return global.IsEmpty() &&
+            txStreamFormat.IsEmpty() &&
+            rxStreamFormat.IsEmpty() &&
+            extSync.IsEmpty() &&
+            reserved.IsEmpty();
+    }
+
+    [[nodiscard]] constexpr bool HasStandardStreamGeometry() const noexcept {
+        return global.HasPayload(0x68) &&
+            txStreamFormat.HasPayload(8) &&
+            rxStreamFormat.HasPayload(8);
     }
 };
 
@@ -484,6 +506,15 @@ namespace CurrentConfigOffset {
     constexpr uint32_t kMiddleStream = 0x3000;
     constexpr uint32_t kHighRouter = 0x4000;
     constexpr uint32_t kHighStream = 0x5000;
+}
+
+namespace ExtensionStreamOffset {
+    constexpr uint32_t kTxStreamCount = 0x0000;
+    constexpr uint32_t kRxStreamCount = 0x0004;
+    constexpr uint32_t kFirstEntry = 0x0008;
+    constexpr uint32_t kEntrySize = 0x010C;
+    constexpr uint32_t kEntryAudioChannels = 0x0000;
+    constexpr uint32_t kEntryMidiPorts = 0x0004;
 }
 
 } // namespace ASFW::Audio::DICE

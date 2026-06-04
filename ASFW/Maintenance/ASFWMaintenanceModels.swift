@@ -28,6 +28,44 @@ enum MaintenanceHealthState: String, Equatable {
     case uninstalled
 }
 
+struct MaintenanceAudioRuntimeTelemetry: Equatable {
+    var state: String?
+    var phase: String?
+    var statusName: String?
+    var statusCode: UInt64?
+    var rxQueueStatus: UInt64?
+    var txQueueStatus: UInt64?
+    var attempt: UInt64?
+    var guid: UInt64?
+    var ok: Bool?
+    var detail: String?
+
+    var hasAnyData: Bool {
+        state != nil || phase != nil || statusCode != nil || statusName != nil
+    }
+
+    var indicatesStartFailure: Bool {
+        state == "failed_to_start" || (phase?.contains("start") == true && ok == false)
+    }
+
+    var indicatesStopFailure: Bool {
+        state == "failed_to_stop" || (phase?.contains("stop") == true && ok == false)
+    }
+
+    var statusText: String {
+        if let statusName, let statusCode {
+            return "\(statusName) (0x\(String(statusCode, radix: 16)))"
+        }
+        if let statusName {
+            return statusName
+        }
+        if let statusCode {
+            return "0x\(String(statusCode, radix: 16))"
+        }
+        return "unknown"
+    }
+}
+
 struct MaintenanceStateSummary: Equatable {
     var health: MaintenanceHealthState
     var activeDriver: Bool
@@ -180,6 +218,78 @@ struct ASFWMaintenanceParser {
                                         deviceName: String = "Alesis MultiMix Firewire") -> Bool {
         coreAudioContainsDevice(systemProfilerOutput: systemProfilerOutput,
                                 deviceName: Optional(deviceName))
+    }
+
+    static func audioRuntimeTelemetry(driverIoregOutput: String,
+                                      audioNubIoregOutput: String) -> MaintenanceAudioRuntimeTelemetry? {
+        let output = [audioNubIoregOutput, driverIoregOutput]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n")
+        let telemetry = MaintenanceAudioRuntimeTelemetry(
+            state: stringProperty("ASFWAudioRuntimeState", in: output),
+            phase: stringProperty("ASFWAudioRuntimePhase", in: output),
+            statusName: stringProperty("ASFWAudioLastStatusName", in: output),
+            statusCode: unsignedIntegerProperty("ASFWAudioLastStatus", in: output),
+            rxQueueStatus: unsignedIntegerProperty("ASFWAudioLastRxQueueStatus", in: output),
+            txQueueStatus: unsignedIntegerProperty("ASFWAudioLastTxQueueStatus", in: output),
+            attempt: unsignedIntegerProperty("ASFWAudioRuntimeAttempt", in: output),
+            guid: unsignedIntegerProperty("ASFWAudioRuntimeGUID", in: output),
+            ok: boolProperty("ASFWAudioRuntimeOK", in: output),
+            detail: stringProperty("ASFWAudioRuntimeDetail", in: output)
+        )
+        return telemetry.hasAnyData ? telemetry : nil
+    }
+
+    static func stringProperty(_ key: String, in output: String) -> String? {
+        let escaped = NSRegularExpression.escapedPattern(for: key)
+        let pattern = #""\#(escaped)"\s*=\s*"([^"]*)""#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(output.startIndex..<output.endIndex, in: output)
+        guard let match = regex.firstMatch(in: output, range: range),
+              match.numberOfRanges > 1,
+              let valueRange = Range(match.range(at: 1), in: output) else {
+            return nil
+        }
+        return String(output[valueRange])
+    }
+
+    static func unsignedIntegerProperty(_ key: String, in output: String) -> UInt64? {
+        let escaped = NSRegularExpression.escapedPattern(for: key)
+        let pattern = #""\#(escaped)"\s*=\s*(0x[0-9a-fA-F]+|\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(output.startIndex..<output.endIndex, in: output)
+        guard let match = regex.firstMatch(in: output, range: range),
+              match.numberOfRanges > 1,
+              let valueRange = Range(match.range(at: 1), in: output) else {
+            return nil
+        }
+        let value = String(output[valueRange])
+        if value.hasPrefix("0x") || value.hasPrefix("0X") {
+            return UInt64(String(value.dropFirst(2)), radix: 16)
+        }
+        return UInt64(value)
+    }
+
+    static func boolProperty(_ key: String, in output: String) -> Bool? {
+        let escaped = NSRegularExpression.escapedPattern(for: key)
+        let pattern = #""\#(escaped)"\s*=\s*(Yes|No|true|false|1|0)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        let range = NSRange(output.startIndex..<output.endIndex, in: output)
+        guard let match = regex.firstMatch(in: output, range: range),
+              match.numberOfRanges > 1,
+              let valueRange = Range(match.range(at: 1), in: output) else {
+            return nil
+        }
+        switch String(output[valueRange]).lowercased() {
+        case "yes", "true", "1":
+            return true
+        case "no", "false", "0":
+            return false
+        default:
+            return nil
+        }
     }
 
     static func summarize(systemExtensions: String,

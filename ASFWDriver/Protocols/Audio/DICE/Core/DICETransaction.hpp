@@ -7,6 +7,7 @@
 #pragma once
 
 #include "DICETypes.hpp"
+#include "../../AudioTypes.hpp"
 #include "../../../Ports/ProtocolRegisterIO.hpp"
 #include "../../../../Common/WireFormat.hpp"
 #include <DriverKit/IOReturn.h>
@@ -71,6 +72,16 @@ public:
     /// @param callback   Callback with parsed stream config
     void ReadRxStreamConfig(const GeneralSections& sections,
                             std::function<void(IOReturn, StreamConfig)> callback);
+
+    /// Read TCAT EAP current-config stream shape.
+    ///
+    /// The extension stream table exposes PCM/MIDI counts but not active ISO
+    /// channels. It is diagnostics/input to later bring-up, not a publishable
+    /// CoreAudio stream geometry by itself.
+    void ReadExtensionCurrentStreamCaps(const ExtensionSections& sections,
+                                        uint32_t streamConfigOffset,
+                                        uint32_t sampleRateHz,
+                                        std::function<void(IOReturn, AudioStreamRuntimeCaps)> callback);
     
     /// Read all device capabilities (global + TX + RX streams)
     /// @param callback   Callback with complete capabilities

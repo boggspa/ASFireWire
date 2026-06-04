@@ -26,9 +26,9 @@ fi
 echo "Building ASFW full-debug local app/driver."
 echo "  driver profile: $DRIVER_PROFILE"
 echo "  driver entitlement: com.apple.developer.driverkit.allow-any-userclient-access"
-echo "  version: ${ASFW_CURRENT_PROJECT_VERSION:-28}"
+echo "  version: ${ASFW_CURRENT_PROJECT_VERSION:-31}"
 
-export ASFW_CURRENT_PROJECT_VERSION="${ASFW_CURRENT_PROJECT_VERSION:-28}"
+export ASFW_CURRENT_PROJECT_VERSION="${ASFW_CURRENT_PROJECT_VERSION:-31}"
 export DERIVED_DATA="${DERIVED_DATA:-$ROOT_DIR/build/DerivedDataFullDebugLocal}"
 export ASFW_SAFE_DRIVER_PROFILE="$DRIVER_PROFILE"
 export ASFW_DRIVER_ENTITLEMENTS_PATH="ASFWDriver/ASFWDriverAllowAnyUserClient.entitlements"

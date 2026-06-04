@@ -27,6 +27,17 @@ extension ASFWDriverConnector {
             return nil
         }
 
+        guard sections.global.size >= 0x68,
+              sections.txStreamFormat.size >= 8,
+              sections.rxStreamFormat.size >= 8 else {
+            log(String(format: "Midas standard DICE section table is incomplete: global=%u tx=%u rx=%u",
+                       sections.global.size,
+                       sections.txStreamFormat.size,
+                       sections.rxStreamFormat.size),
+                level: .warning)
+            return nil
+        }
+
         let globalLength = boundedMidasReadLength(sections.global.size, minimum: 0x68, maximum: 512)
         let txLength = boundedMidasReadLength(sections.txStreamFormat.size, minimum: 8, maximum: 4096)
         let rxLength = boundedMidasReadLength(sections.rxStreamFormat.size, minimum: 8, maximum: 4096)

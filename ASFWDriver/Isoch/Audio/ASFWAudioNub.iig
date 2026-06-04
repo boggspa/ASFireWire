@@ -141,6 +141,9 @@ struct ASFWAudioNub_IVars {
     IOBufferMemoryDescriptor* rxQueueMem{nullptr};
     IOMemoryMap* rxQueueMap{nullptr};
     uint64_t rxQueueBytes{0};
+
+    // CoreAudio start/stop telemetry published to IORegistry for the app HUD.
+    uint64_t audioRuntimeAttempt{0};
 };
 
 #endif /* ASFWAudioNub_h */

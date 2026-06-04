@@ -60,7 +60,11 @@ constexpr uint32_t kTxStreamBaseLo = static_cast<uint32_t>(
 constexpr uint32_t kRxStreamBaseLo = static_cast<uint32_t>(
     ASFW::Audio::DICE::DICEAbsoluteAddress(0x3DC) & 0xFFFFFFFFULL);
 constexpr uint32_t kAppSectionQuadletOffset = 0x1FU;
+constexpr uint32_t kCurrentConfigQuadletOffset = 0x1DU;
 constexpr uint32_t kAppSectionBaseLo = kExtensionBaseLo + (kAppSectionQuadletOffset * 4U);
+constexpr uint32_t kCurrentConfigBaseLo = kExtensionBaseLo + (kCurrentConfigQuadletOffset * 4U);
+constexpr uint32_t kCurrentConfigLowStreamBaseLo =
+    kCurrentConfigBaseLo + ASFW::Audio::DICE::CurrentConfigOffset::kLowStream;
 constexpr uint32_t kGlobalReadBytes = 104U;
 constexpr uint32_t kClockSelect48kInternal =
     (ASFW::Audio::DICE::ClockRateIndex::k48000 << ASFW::Audio::DICE::ClockSelect::kRateShift) |
@@ -82,7 +86,7 @@ std::array<uint8_t, ExtensionSections::kWireSize> MakeExtensionSectionsWire() {
         0x1A, 0x10,  // peak
         0x1B, 0x20,  // router
         0x1C, 0x40,  // stream format
-        0x1D, 0x80,  // current config
+        kCurrentConfigQuadletOffset, 0x1800,  // current config
         0x1E, 0x40,  // standalone
         kAppSectionQuadletOffset, 0x100,  // application
     };
@@ -160,8 +164,12 @@ public:
         if (address.addressHi == 0xFFFFU && address.addressLo == kDiceBaseLo &&
             length >= GeneralSections::kWireSize) {
             ++generalReadCount;
-            const auto bytes = MakeGeneralSectionsWire();
-            payload.assign(bytes.begin(), bytes.end());
+            if (zeroStandardSections_) {
+                std::fill(payload.begin(), payload.end(), 0);
+            } else {
+                const auto bytes = MakeGeneralSectionsWire();
+                payload.assign(bytes.begin(), bytes.end());
+            }
         } else if (address.addressHi == 0xFFFFU && address.addressLo == kGlobalBaseLo &&
                    length >= kGlobalReadBytes) {
             ++globalReadCount;
@@ -186,6 +194,27 @@ public:
             ++appQuadReadCount;
             payload.resize(sizeof(uint32_t));
             PutBe32(payload.data(), 0U);
+        } else if (address.addressHi == 0xFFFFU &&
+                   address.addressLo == kCurrentConfigLowStreamBaseLo &&
+                   length >= 8) {
+            ++extensionStreamHeaderReadCount;
+            payload.resize(8);
+            PutBe32(payload.data() + 0x00, extensionTxStreams_);
+            PutBe32(payload.data() + 0x04, extensionRxStreams_);
+        } else if (address.addressHi == 0xFFFFU &&
+                   address.addressLo == kCurrentConfigLowStreamBaseLo + 0x8 &&
+                   length >= 8) {
+            ++extensionStreamEntryReadCount;
+            payload.resize(8);
+            PutBe32(payload.data() + 0x00, extensionTxPcmChannels_);
+            PutBe32(payload.data() + 0x04, extensionTxMidiPorts_);
+        } else if (address.addressHi == 0xFFFFU &&
+                   address.addressLo == kCurrentConfigLowStreamBaseLo + 0x8 + 0x10c &&
+                   length >= 8) {
+            ++extensionStreamEntryReadCount;
+            payload.resize(8);
+            PutBe32(payload.data() + 0x00, extensionRxPcmChannels_);
+            PutBe32(payload.data() + 0x04, extensionRxMidiPorts_);
         }
 
         callback(AsyncStatus::kSuccess, std::span<const uint8_t>(payload.data(), payload.size()));
@@ -256,6 +285,9 @@ public:
     int rxStreamReadCount{0};
     int extensionReadCount{0};
     int appQuadReadCount{0};
+    int extensionStreamHeaderReadCount{0};
+    int extensionStreamEntryReadCount{0};
+    bool zeroStandardSections_{false};
     uint32_t clockSelect_{kClockSelect48kInternal};
     uint32_t status_{kLocked48kStatus};
     uint32_t extStatus_{0};
@@ -265,6 +297,12 @@ public:
     uint32_t txMidiPorts_{1};
     uint32_t rxPcmChannels_{8};
     uint32_t rxMidiPorts_{1};
+    uint32_t extensionTxStreams_{1};
+    uint32_t extensionRxStreams_{1};
+    uint32_t extensionTxPcmChannels_{32};
+    uint32_t extensionTxMidiPorts_{1};
+    uint32_t extensionRxPcmChannels_{32};
+    uint32_t extensionRxMidiPorts_{1};
 
 private:
     AsyncHandle NextHandle() {
@@ -352,6 +390,41 @@ TEST(DICETcatProtocolTests, RefreshRuntimeCapsLoadsReadOnlyStreamGeometry) {
     EXPECT_EQ(bus.globalReadCount, 1);
     EXPECT_EQ(bus.txStreamReadCount, 1);
     EXPECT_EQ(bus.rxStreamReadCount, 1);
+}
+
+TEST(DICETcatProtocolTests, RefreshRuntimeCapsFallsBackToExtensionCurrentConfigDiagnostics) {
+    CountingFireWireBus bus;
+    bus.zeroStandardSections_ = true;
+    DICETcatProtocol protocol(bus, bus, 2, nullptr);
+    ASSERT_EQ(protocol.Initialize(), kIOReturnSuccess);
+
+    IOReturn refreshStatus = kIOReturnError;
+    protocol.RefreshRuntimeAudioStreamCaps([&](IOReturn status) {
+        refreshStatus = status;
+    });
+
+    EXPECT_EQ(refreshStatus, kIOReturnSuccess);
+
+    AudioStreamRuntimeCaps caps{};
+    ASSERT_TRUE(protocol.GetRuntimeAudioStreamCaps(caps));
+    EXPECT_EQ(caps.sampleRateHz, 48000U);
+    EXPECT_EQ(caps.hostInputPcmChannels, 32U);
+    EXPECT_EQ(caps.hostOutputPcmChannels, 32U);
+    EXPECT_EQ(caps.deviceToHostAm824Slots, 33U);
+    EXPECT_EQ(caps.hostToDeviceAm824Slots, 33U);
+    EXPECT_EQ(caps.deviceToHostActiveStreams, 1U);
+    EXPECT_EQ(caps.hostToDeviceActiveStreams, 1U);
+    EXPECT_EQ(caps.deviceToHostIsoChannel, AudioStreamRuntimeCaps::kInvalidIsoChannel);
+    EXPECT_EQ(caps.hostToDeviceIsoChannel, AudioStreamRuntimeCaps::kInvalidIsoChannel);
+    EXPECT_STREQ(protocol.GetRuntimeAudioStreamCapsSource(), "extension-current-config");
+    EXPECT_STREQ(protocol.GetRuntimeAudioStreamCapsFailureReason(), "extension_current_config_counts_only");
+    EXPECT_EQ(bus.generalReadCount, 1);
+    EXPECT_EQ(bus.globalReadCount, 0);
+    EXPECT_EQ(bus.txStreamReadCount, 0);
+    EXPECT_EQ(bus.rxStreamReadCount, 0);
+    EXPECT_EQ(bus.extensionReadCount, 1);
+    EXPECT_EQ(bus.extensionStreamHeaderReadCount, 1);
+    EXPECT_EQ(bus.extensionStreamEntryReadCount, 2);
 }
 
 TEST(DICETcatProtocolTests, ReadDuplexHealthReturnsCurrentGlobalLockState) {

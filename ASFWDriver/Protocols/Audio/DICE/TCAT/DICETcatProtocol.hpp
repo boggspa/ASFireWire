@@ -45,6 +45,8 @@ public:
 
     bool GetRuntimeAudioStreamCaps(AudioStreamRuntimeCaps& outCaps) const override;
     void RefreshRuntimeAudioStreamCaps(VoidCallback callback) override;
+    const char* GetRuntimeAudioStreamCapsFailureReason() const override;
+    const char* GetRuntimeAudioStreamCapsSource() const override;
 
     void PrepareDuplex(const AudioDuplexChannels& channels,
                        const DiceDesiredClockConfig& desiredClock,
@@ -73,11 +75,14 @@ private:
 
     void EnsureSectionsLoaded(VoidCallback callback);
     void EnsureRuntimeCapsLoaded(VoidCallback callback);
+    void TryLoadExtensionRuntimeCaps(uint32_t sampleRateHz, VoidCallback callback);
     void CacheRuntimeCaps(const GlobalState& global,
                           const StreamConfig& tx,
                           const StreamConfig& rx) noexcept;
     void CacheRuntimeCaps(const AudioStreamRuntimeCaps& caps) noexcept;
     void ResetRuntimeCaps() noexcept;
+    void SetRuntimeCapsDiagnostic(const char* reason, const char* source) noexcept;
+    static uint32_t CurrentConfigStreamOffsetForSampleRate(uint32_t sampleRateHz) noexcept;
 
     Protocols::Ports::FireWireBusInfo& busInfo_;
     ::ASFW::IRM::IRMClient* irmClient_{nullptr};
@@ -98,6 +103,8 @@ private:
     std::atomic<uint32_t> deviceToHostIsoChannel_{AudioStreamRuntimeCaps::kInvalidIsoChannel};
     std::atomic<uint32_t> hostToDeviceIsoChannel_{AudioStreamRuntimeCaps::kInvalidIsoChannel};
     std::atomic<bool> runtimeCapsValid_{false};
+    std::atomic<const char*> runtimeCapsFailureReason_{"not_attempted"};
+    std::atomic<const char*> runtimeCapsSource_{"none"};
 };
 
 } // namespace ASFW::Audio::DICE::TCAT
