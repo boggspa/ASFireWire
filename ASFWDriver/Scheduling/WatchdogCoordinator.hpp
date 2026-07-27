@@ -59,6 +59,10 @@ class WatchdogCoordinator {
     // Edge-triggered so a permanently ineligible drain reports once, not at
     // 1 kHz. Starts true: the interesting event is the drop to false.
     bool lastDrainEligible_{true};
+    // Same edge-trigger for the IT tick. The transmit watchdog is the only
+    // thing that can report a stalled refill, so "the watchdog never ran" and
+    // "the watchdog ran and saw nothing wrong" must not look alike in a log.
+    bool lastTransmitTickable_{false};
 };
 
 } // namespace ASFW::Driver

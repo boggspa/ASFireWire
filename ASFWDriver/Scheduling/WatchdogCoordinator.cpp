@@ -219,6 +219,10 @@ void WatchdogCoordinator::TickIsochTransmit(
 
     const bool isRunning =
         isochTransmitContext->GetState() == ASFW::Isoch::ITState::Running;
+    if (isRunning != lastTransmitTickable_) {
+        lastTransmitTickable_ = isRunning;
+        ASFW_LOG(Isoch, "[TxTick] polling=%d", isRunning);
+    }
     if (isRunning) {
         isochTransmitContext->Poll();
     }
