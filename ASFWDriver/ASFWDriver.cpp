@@ -920,15 +920,22 @@ void ASFWDriver::InterruptOccurred_Impl(ASFWDriver_InterruptOccurred_Args) {
                                            ctx.deps.asyncController.get());
 }
 
+// Re-arming is deliberately not gated on AdmitsNormalWork(). The tick is a
+// self-rescheduling timer, so gating the re-arm makes any single non-Running
+// moment permanent: a bus reset leaves kRunning, the tick that lands during it
+// returns early, nothing re-arms, and the 1 ms watchdog is dead for the rest of
+// the session. Everything it drives dies with it - the async transaction
+// timeout tick, IR ZTS/payload/SYT telemetry drains, and the IT refill
+// watchdog, which is the only thing that can report a stalled transmit ring.
+//
+// Teardown does not rely on this guard: ASFWDriver::Stop calls
+// WatchdogCoordinator::Stop(), which disables the dispatch source, and
+// Reset() keeps it alive until DriverKit has drained queued callbacks.
 void ASFWDriver::ScheduleAsyncWatchdog(uint64_t delayUsec) {
     if (!ivars || !ivars->context) {
         return;
     }
-    auto& ctx = *ivars->context;
-    if (!ctx.lifecycle || !ctx.lifecycle->AdmitsNormalWork()) {
-        return;
-    }
-    ctx.watchdog.Schedule(delayUsec);
+    ivars->context->watchdog.Schedule(delayUsec);
 }
 
 void ASFWDriver::AsyncWatchdogTimerFired_Impl(ASFWDriver_AsyncWatchdogTimerFired_Args) {
@@ -937,12 +944,12 @@ void ASFWDriver::AsyncWatchdogTimerFired_Impl(ASFWDriver_AsyncWatchdogTimerFired
 
     if (ivars && ivars->context) {
         auto& ctx = *ivars->context;
-        if (!ctx.lifecycle || !ctx.lifecycle->AdmitsNormalWork()) {
-            return;
+        // Skip the work outside kRunning, but keep the timer alive.
+        if (ctx.lifecycle && ctx.lifecycle->AdmitsNormalWork()) {
+            ctx.watchdog.HandleTick(ctx.controller.get(), ctx.deps.asyncController.get(),
+                                    ctx.isoch.ReceiveContext(), ctx.isoch.TransmitContext(),
+                                    ctx.statusPublisher);
         }
-        ctx.watchdog.HandleTick(ctx.controller.get(), ctx.deps.asyncController.get(),
-                                ctx.isoch.ReceiveContext(), ctx.isoch.TransmitContext(),
-                                ctx.statusPublisher);
     }
 
     ScheduleAsyncWatchdog(kAsyncWatchdogPeriodUsec);
