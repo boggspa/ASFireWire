@@ -553,10 +553,19 @@ void IsochTransmitContext::Poll() noexcept {
                 // interrupt path died mid-session and the watchdog fed the
                 // wire for 35 minutes of corrupt audio). Sustained interrupt
                 // silence is a transport fault, not jitter.
-                auto access = hardware_ ? hardware_->TryBeginAccess() : Driver::HardwareAccessScope{};
-                const uint32_t ctrl = access ? access.Read(static_cast<Register32>(
-                    DMAContextHelpers::IsoXmitContextControl(contextIndex_))) : 0;
-                const uint32_t latchedIntEvents = access ? access.Read(Register32::kIntEvent) : 0;
+                // The access scope must close before StopImmediatelyForTxFault,
+                // which acquires the same non-recursive hardware lock. Holding
+                // it across the call aborts the process in
+                // _os_unfair_lock_recursive_abort.
+                uint32_t ctrl = 0;
+                uint32_t latchedIntEvents = 0;
+                if (hardware_) {
+                    if (auto access = hardware_->TryBeginAccess()) {
+                        ctrl = access.Read(static_cast<Register32>(
+                            DMAContextHelpers::IsoXmitContextControl(contextIndex_)));
+                        latchedIntEvents = access.Read(Register32::kIntEvent);
+                    }
+                }
                 ASFW_LOG(Isoch,
                          "IT FATAL: interrupt path silent across %u "
                          "consecutive watchdog kicks; stopping context "
