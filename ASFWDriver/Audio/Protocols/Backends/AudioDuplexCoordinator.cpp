@@ -482,6 +482,19 @@ IOReturn AudioDuplexCoordinator::RunStartStreaming(uint64_t guid) noexcept {
         desiredClock = session.desiredClock;
     } else if (IsSupportedAudioClockConfig(session.appliedClock)) {
         desiredClock = session.appliedClock;
+    } else {
+        // Cold start, nothing selected yet: prefer the rate the device is
+        // already locked to. The 48 kHz default below strands a device that
+        // came up at another rate, and on hardware whose CLOCK_SELECT readback
+        // already encodes 48 kHz the bring-up treats the write as redundant and
+        // skips it, so the lock poll waits for a change that was never
+        // requested and the start times out. Adapters that cannot report a
+        // current clock leave the 48 kHz default untouched.
+        AudioClockConfig currentClock{};
+        if (deviceControl->GetCurrentClock(currentClock) &&
+            IsSupportedAudioClockConfig(currentClock)) {
+            desiredClock = currentClock;
+        }
     }
     const DuplexRestartReason reason = HasRestartIntent(session)
                                          ? DICE::ClassifyRestartReason(&session, desiredClock)
@@ -664,14 +677,24 @@ IOReturn AudioDuplexCoordinator::RunRecoveryStreaming(uint64_t guid,
         return kIOReturnNotReady;
     }
 
+    // Same cold-start rule as RunStartStreaming: fall back to the device's live
+    // clock before the fixed 48 kHz default (see the note there).
+    AudioClockConfig coldStartClock{
+        .sampleRateHz = 48000U,
+    };
+    {
+        AudioClockConfig currentClock{};
+        if (deviceControl->GetCurrentClock(currentClock) &&
+            IsSupportedAudioClockConfig(currentClock)) {
+            coldStartClock = currentClock;
+        }
+    }
     const AudioClockConfig desiredClock =
         (session.desiredClock.sampleRateHz != 0)
             ? session.desiredClock
             : ((session.appliedClock.sampleRateHz != 0)
                    ? session.appliedClock
-                   : AudioClockConfig{
-                         .sampleRateHz = 48000U,
-                     });
+                   : coldStartClock);
 
     if (HasAnyRestartState(session) || session.phase == DuplexRestartPhase::kRunning) {
         if (TeardownRequested()) {

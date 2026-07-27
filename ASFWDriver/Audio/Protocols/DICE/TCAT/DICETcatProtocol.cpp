@@ -143,6 +143,17 @@ void DICETcatProtocol::EnsureRuntimeStreamGeometry(VoidCallback callback) {
     EnsureRuntimeCapsLoaded(std::move(callback));
 }
 
+bool DICETcatProtocol::GetCurrentClock(AudioClockConfig& outClock) const noexcept {
+    // selectedClock_ is seeded from the device's live rate the first time global
+    // state is read, so this reports the rate the device is actually locked to
+    // before any selection has been made.
+    if (selectedClock_.sampleRateHz == 0) {
+        return false;
+    }
+    outClock = selectedClock_;
+    return true;
+}
+
 void DICETcatProtocol::SetTeardownCancelToken(const std::atomic<bool>* cancel) noexcept {
     teardownCancel_ = cancel;
     if (duplexCtrl_) {
@@ -415,6 +426,30 @@ void DICETcatProtocol::EnsureRuntimeCapsLoaded(VoidCallback callback) {
                          global.status,
                          global.extStatus,
                          global.notification);
+
+                // Seed the sticky clock from the device's live rate the first time we
+                // read it. selectedClock_ is otherwise only written by ApplyClockConfig
+                // and PrepareDuplex, so on a cold start it stays {0} and
+                // PrepareDuplex48k falls back to 48 kHz. On a device that comes up at a
+                // different rate that fallback targets a rate the device is not locked
+                // to, and if CLOCK_SELECT already happens to read the 48 kHz encoding
+                // the redundant-write skip suppresses the write entirely, so the lock
+                // poll waits for a rate change that was never requested and every
+                // StartIO fails with a timeout.
+                //
+                // This only fills the "nothing selected yet" hole: a real selection is
+                // never overwritten, and a device already at 48 kHz seeds 48 kHz, which
+                // is exactly the previous fallback value.
+                if (selectedClock_.sampleRateHz == 0 && global.sampleRate != 0) {
+                    const AudioClockConfig liveClock{.sampleRateHz = global.sampleRate};
+                    DiceClockConfiguration encoded{};
+                    if (MakeDiceClockConfiguration(liveClock, encoded)) {
+                        selectedClock_ = liveClock;
+                        ASFW_LOG(DICE,
+                                 "DICETcatProtocol: seeded selected clock from device live rate %u Hz",
+                                 global.sampleRate);
+                    }
+                }
                 diceReader_.ReadTxStreamConfig(
                     sections_,
                     [this, state, callback = std::move(callback)](IOReturn txStatus, StreamConfig tx) mutable {

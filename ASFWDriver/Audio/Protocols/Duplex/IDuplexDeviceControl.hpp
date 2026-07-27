@@ -33,6 +33,16 @@ public:
         callback(kIOReturnSuccess);
     }
 
+    // Report the clock the device is currently running, if the adapter knows it.
+    // Used only as the cold-start default, when no rate has been selected yet:
+    // without it a start forces 48 kHz onto a device that came up at another
+    // rate. Adapters that cannot report a current clock return false and keep
+    // the caller's existing default.
+    [[nodiscard]] virtual bool GetCurrentClock(AudioClockConfig& outClock) const noexcept {
+        (void)outClock;
+        return false;
+    }
+
     virtual void PrepareDuplex(const AudioDuplexChannels& channels,
                                const AudioClockConfig& desiredClock,
                                PrepareCallback callback) = 0;

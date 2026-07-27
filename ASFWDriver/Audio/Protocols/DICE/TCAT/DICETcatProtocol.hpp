@@ -58,6 +58,8 @@ public:
                           ClockApplyCallback callback) override;
     void ReadDuplexHealth(HealthCallback callback) override;
     void EnsureRuntimeStreamGeometry(VoidCallback callback) override;
+
+    [[nodiscard]] bool GetCurrentClock(AudioClockConfig& outClock) const noexcept override;
     void SetTeardownCancelToken(const std::atomic<bool>* cancel) noexcept override;
     ::ASFW::IRM::IRMClient* GetIRMClient() const override { return irmClient_; }
 
