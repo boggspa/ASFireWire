@@ -60,6 +60,20 @@ void CacheRuntimeCaps(AudioStreamRuntimeCaps& caps,
     caps.deviceToHostAm824Slots = tx.TotalAm824Slots();
     caps.hostOutputPcmChannels = rx.TotalPcmChannels();
     caps.hostToDeviceAm824Slots = rx.TotalAm824Slots();
+    // BENCH-ONLY EXPERIMENT (do not commit): same clamp as
+    // DICETcatProtocol::CacheRuntimeCaps, second producer of the same cache.
+    // The MultiMix's second device->host entry (iso=-1) never carries data;
+    // summing it makes the host expect DBS=14 against a wire that carries
+    // DBS=12 ([RxGeom] first mismatch: wire dbs=12 vs channels=12
+    // am824Slots=14). Both producers must agree or the later one wins.
+    if (tx.numStreams >= 2 && tx.streams[1].isoChannel < 0) {
+        caps.hostInputPcmChannels = tx.streams[0].pcmChannels;
+        caps.deviceToHostAm824Slots = tx.streams[0].Am824Slots();
+        ASFW_LOG(DICE,
+                 "DICEDuplexBringup: BENCH d2h totals clamped to stream0 pcm=%u slots=%u (stream1 iso=-1)",
+                 caps.hostInputPcmChannels,
+                 caps.deviceToHostAm824Slots);
+    }
     caps.sampleRateHz = global.sampleRate;
     caps.deviceToHostIsoChannel =
         tx.FirstActiveIsoChannel(AudioStreamRuntimeCaps::kInvalidIsoChannel);

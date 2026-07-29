@@ -615,6 +615,17 @@ void DiceAudioBackend::EnsureNubForGuid(uint64_t guid) noexcept {
             AudioStreamRuntimeCaps caps{};
             if (protocol->GetRuntimeAudioStreamCaps(caps) &&
                 ApplyDiceRuntimeCapsToDeviceConfig(caps, dev)) {
+                // BENCH-ONLY EXPERIMENT (do not commit): publish the rate the
+                // session actually locked. 7ba0672 rightly stopped collapsing
+                // the advertised rate SET to the momentary rate, but pinning
+                // currentSampleRate at 48 kHz while the cold-start seed locks
+                // the wire at the device's live rate gives the HAL a clock the
+                // wire does not run. Soak #1 (2026-07-28): that 44.1-wire /
+                // 48k-HAL session zombied at 779 s - TX drift debt d=3268
+                // exceeded horizon=2400, exposure froze, no fault raised.
+                if (caps.sampleRateHz != 0) {
+                    dev.currentSampleRate = caps.sampleRateHz;
+                }
                 ASFW_LOG(Audio,
                          "DiceAudioBackend::EnsureNubForGuid: applied runtime geometry rate=%u in=%u out=%u (GUID=0x%016llx)",
                          dev.currentSampleRate,

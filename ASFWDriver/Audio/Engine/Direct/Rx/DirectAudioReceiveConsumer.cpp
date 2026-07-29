@@ -192,7 +192,18 @@ void DirectAudioReceiveConsumer::ConsumePacket(
                 counters->rxZeroDataBlockSize.fetch_add(1, std::memory_order_relaxed);
                 break;
             case DirectRxWriteStatus::kGeometryMismatch:
-                counters->rxGeometryMismatch.fetch_add(1, std::memory_order_relaxed);
+                // First occurrence per session carries the observed wire shape.
+                // The counter alone says the device and config disagree but not
+                // which of the three inputs is wrong, and they point at three
+                // different fixes.
+                if (counters->rxGeometryMismatch.fetch_add(1, std::memory_order_relaxed) == 0) {
+                    ASFW_LOG(DirectAudio,
+                             "[RxGeom] first mismatch: wire dbs=%u vs channels=%u am824Slots=%u payload=%zu",
+                             result.dbs,
+                             channels,
+                             inputView_.deviceToHostAm824Slots,
+                             packet.payload.size());
+                }
                 break;
             default:
                 break;

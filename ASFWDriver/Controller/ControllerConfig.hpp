@@ -50,8 +50,15 @@ enum class PowerPolicyLevel : uint8_t {
 // wire-visible and can reset a bus, so it is a hardware-validation opt-in rather
 // than the default for an attached audio device.
 struct RolePolicy {
-    ASFW::FW::RoleMode roleMode{ASFW::FW::RoleMode::ClientOnly};
-    ASFW::FW::FullBMActivityLevel fullBMActivityLevel{ASFW::FW::FullBMActivityLevel::ObserveOnly};
+    // BENCH-ONLY, DO NOT COMMIT: taking the FW-22 hardware-validation opt-in.
+    // On a Mac plus one audio interface nothing ever claims Bus Manager, so with
+    // ClientOnly the CyclePolicyCoordinator short-circuits at its roleMode gate
+    // and local cycleMaster is never armed even though we are root. The bus then
+    // carries no cycle-start packets at all: IT transmits nothing, IR receives
+    // nothing, both contexts sit run=1 active=1 dead=0, and StartIO dies at ZTS.
+    ASFW::FW::RoleMode roleMode{ASFW::FW::RoleMode::FullBusManager};
+    ASFW::FW::FullBMActivityLevel fullBMActivityLevel{
+        ASFW::FW::FullBMActivityLevel::CyclePolicyAllowed};
     PowerPolicyLevel powerPolicyLevel{PowerPolicyLevel::ObserveOnly};
 
     // EXPERIMENTAL (FW-21): Linux-shaped self-promotion on a verified CMC=0 root.

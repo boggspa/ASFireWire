@@ -500,6 +500,24 @@ void DICETcatProtocol::CacheRuntimeCaps(const GlobalState& global,
         .hostToDeviceIsoChannel = rx.FirstActiveIsoChannel(AudioStreamRuntimeCaps::kInvalidIsoChannel),
     };
 
+    // BENCH-ONLY EXPERIMENT (do not commit): the MultiMix advertises a second
+    // device->host stream entry (MAIN_IN L/R) with iso=-1 that never carries
+    // data - FFADO clamps these models to one stream for the same reason
+    // (libffado dice_avdevice.cpp:1682-1695). Summing the phantom entry's
+    // slots into the totals makes the host expect DBS=14 while the wire
+    // carries DBS=12, so every data packet the device sends is rejected as
+    // geometryMismatch (asfw_get_audio_stream_health, 2026-07-28). Derive the
+    // capture totals from stream 0 alone while the second entry is disabled.
+    // Correct placement (protocol vs backend quirk) is the maintainer's call.
+    if (tx.numStreams >= 2 && tx.streams[1].isoChannel < 0) {
+        caps.hostInputPcmChannels = tx.streams[0].pcmChannels;
+        caps.deviceToHostAm824Slots = tx.streams[0].Am824Slots();
+        ASFW_LOG(DICE,
+                 "DICETcatProtocol: BENCH d2h totals clamped to stream0 pcm=%u slots=%u (stream1 iso=-1)",
+                 caps.hostInputPcmChannels,
+                 caps.deviceToHostAm824Slots);
+    }
+
     // Per-stream wire geometry from the DICE TX_NUMBER/RX_NUMBER headers. Stream
     // count includes streams the device reports with iso=-1 (disabled) that the
     // host must still arm for a multi-stream device such as the Venice F32
