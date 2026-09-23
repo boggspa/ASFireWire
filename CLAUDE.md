@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) and other ai agents 
 
 ASFW is a macOS DriverKit-based FireWire (IEEE 1394) driver restoring FireWire functionality removed in macOS Tahoe (26). It uses PCIDriverKit for user-space OHCI controller access, AudioDriverKit for CoreAudio integration, and SCSIControllerDriverKit for SBP-2 mass storage (SCSI HBA, in all builds since v0.3.0). TODO: MIDIDriverKit.
 
+The SCSI implementation is present in source, but Chris reported on 2026-09-24 that Apple's SCSI entitlement/identifier approval for his signing team is still pending. An unsigned build passing compilation does not establish that a Developer ID SCSI dext can be signed, installed, or run. Keep the SCSI release gate open until Apple grants the required approval and a signed build is verified on hardware.
+
 Two components:
 - **ASFWDriver/** — C++23 DriverKit driver extension (dext)
 - **ASFW/** — Swift 6 control app and installer (required to install the dext)
@@ -278,7 +280,7 @@ Do not ask the user to run traces the agent can capture itself. Two real gotchas
 
 **Commit and git history.** Keep history traceable. If changes are getting large, warn the user that it is better to commit the current work first; otherwise unrelated logic shifts can become hard to repair or reason about.
 
-**DriverKit Architecture on Apple Silicon (arm64e requirement).** Xcode's default settings or `build.sh` might sometimes build the `ASFWDriver` target as standard `arm64`. However, on Apple Silicon, macOS strictly requires all System Extensions (DriverKit dexts) to be built for **`arm64e`** (Pointer Authentication ABI). If the driver is built as `arm64`, it will lack an `LC_MAIN` entry point and `kernelmanagerd` will instantly reject it on hardware attach with `OS_REASON_EXEC` / `ENOEXEC` (Exec format error). Always ensure `ARCHS: x86_64 arm64e` is explicitly set for the DriverKit target in `project.yml` (the pbxproj is generated and gitignored)!
+**DriverKit architecture on Apple Silicon.** For this third-party Developer ID dext, use the DriverKit SDK's `ARCHS_STANDARD` (`arm64` and `x86_64`) in `project.yml`; do not force Apple's platform-signed `arm64e` requirement onto it. The local 0.3.0 Build 6 diagnostic dext loaded on Apple Silicon with `arm64`, while its earlier `arm64e` build was rejected. A missing `LC_MAIN` is expected for DriverKit: XNU's `setup_driver_main` supplies the entry defaults and rejects a pre-existing `LC_MAIN` or `LC_UNIXTHREAD`. See [XNU's execution checks](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exec.c#L1494-L1536), [DriverKit entry handling](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/mach_loader.c#L2669-L2697), and the local 2026-09-19 Build 6 capture record. Do not diagnose `ENOEXEC` from the absence of `LC_MAIN` alone.
 
 **Code Signing and Hardened Runtime.** If you use Ad-Hoc signing (`CODE_SIGN_IDENTITY="-"`) for local testing (with `amfi_get_out_of_my_way=1` in boot-args), you MUST ensure that `ENABLE_HARDENED_RUNTIME = NO` for the DriverKit target. If Hardened Runtime is enabled with an ad-hoc signature, `amfid` will kill the dext on launch (`OS_REASON_EXEC`).
 
